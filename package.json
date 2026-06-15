@@ -8,7 +8,8 @@
     "build": "node scripts/build_assets.js && node scripts/verify_assets.js",
     "verify": "node scripts/verify_assets.js",
     "test": "node --test \"tests/**/*.test.js\"",
-    "repomix": "repomix --config repomix.config.json --output repomix-output.md"
+    "repomix": "repomix --config repomix.config.json --output repomix-output.md",
+    "repomix:prep": "repomix --config repomix-prep.config.json --output repomix-output-prep.md"
   },
   "devDependencies": {
     "repomix": "^1.14.1",

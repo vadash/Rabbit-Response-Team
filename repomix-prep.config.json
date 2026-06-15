@@ -1,26 +1,19 @@
 {
   "output": {
-    "filePath": "repomix-output.md",
+    "filePath": "repomix-output-prep.md",
     "style": "markdown",
     "showLineNumbers": true,
     "truncateBase64": true,
     "topFilesLength": 10
   },
   "include": [
-    "**/*"
+    "scripts/prep/**"
   ],
   "ignore": {
     "useGitignore": true,
     "useDefaultPatterns": true,
     "customPatterns": [
-      "assets/**/*.json",
-      "repomix-output*",
-      "node_modules/",
-      "logs/",
-      "scripts/raw/",
-      "LICENSE",
-      "docs/",
-      "scripts/prep/"
+      "repomix-output*"
     ]
   }
 }
