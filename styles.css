@@ -150,9 +150,8 @@
 }
 
 /* Select Dropdowns */
-#rabbit_api_provider,
-#rabbit_language,
-#rabbit_first_letter {
+#rabbit_mode,
+#rabbit_injection_end_role {
     background: var(--black30a);
     color: var(--SmartThemeBodyColor);
     border: 1px solid rgba(147, 51, 234, 0.3);
@@ -163,19 +162,126 @@
     transition: all 0.2s ease;
 }
 
-#rabbit_api_provider:hover,
-#rabbit_language:hover,
-#rabbit_first_letter:hover {
+#rabbit_mode:hover,
+#rabbit_injection_end_role:hover {
     border-color: rgba(147, 51, 234, 0.6);
     background: var(--black50a);
 }
 
-#rabbit_api_provider:focus,
-#rabbit_language:focus,
-#rabbit_first_letter:focus {
+#rabbit_mode:focus,
+#rabbit_injection_end_role:focus {
     outline: none;
     border-color: #9333ea;
     box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.2);
+}
+
+/* Generic inputs / textareas */
+.rabbit-setting-row input[type="number"],
+.rabbit-setting-row input[type="text"],
+.rabbit-setting-row textarea {
+    width: 100%;
+    padding: 8px;
+    border-radius: 6px;
+    background: var(--black30a);
+    color: var(--SmartThemeBodyColor);
+    border: 1px solid rgba(147, 51, 234, 0.3);
+    transition: all 0.2s ease;
+}
+
+.rabbit-setting-row input[type="number"]:focus,
+.rabbit-setting-row input[type="text"]:focus,
+.rabbit-setting-row textarea:focus {
+    outline: none;
+    border-color: #9333ea;
+    box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.2);
+}
+
+.rabbit-setting-row textarea {
+    resize: vertical;
+    font-family: inherit;
+}
+
+/* Tabs */
+.rabbit-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid rgba(147, 51, 234, 0.3);
+}
+
+.rabbit-tab-button {
+    flex: 1;
+    padding: 12px;
+    background: var(--black50a);
+    color: var(--SmartThemeBodyColor);
+    border: none;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.rabbit-tab-button:hover {
+    background: var(--black70a);
+}
+
+.rabbit-tab-button.active {
+    background: linear-gradient(135deg, #9333ea 0%, #4f46e5 100%);
+    color: white;
+}
+
+/* Language radio */
+.rabbit-language-row .rabbit-lang-radio {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.rabbit-lang-option {
+    flex: 1;
+    min-width: 110px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--black50a);
+    border: 1px solid rgba(147, 51, 234, 0.3);
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--SmartThemeEmColor);
+    transition: all 0.2s ease;
+}
+
+.rabbit-lang-option:hover {
+    border-color: rgba(147, 51, 234, 0.6);
+    background: var(--black70a);
+}
+
+.rabbit-lang-option input {
+    accent-color: #9333ea;
+    cursor: pointer;
+}
+
+/* Part-of-speech fieldset */
+.rabbit-pos-fieldset {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-top: 8px;
+    border: none;
+    padding: 0;
+}
+
+.rabbit-pos-fieldset label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 0;
+    font-weight: 500;
+    color: var(--SmartThemeEmColor);
+    cursor: pointer;
 }
 
 /* Checkboxes */
@@ -331,39 +437,6 @@ input[type="checkbox"] {
 
 .rabbit-reset-button i {
     margin-right: 6px;
-}
-
-/* API-specific option visibility - Simple approach */
-/* Hide all by default */
-.rabbit-heroku-only,
-.rabbit-vercel-only,
-.rabbit-datamuse-only {
-    display: none;
-}
-
-/* Show Heroku options when heroku is selected */
-[data-api-provider="heroku"] .rabbit-heroku-only {
-    display: block;
-}
-
-/* Show Vercel options when vercel is selected */
-[data-api-provider="vercel"] .rabbit-vercel-only {
-    display: block;
-}
-
-/* Show Datamuse options when datamuse is selected */
-[data-api-provider="datamuse"] .rabbit-datamuse-only {
-    display: block;
-}
-
-/* Datamuse contextual mode specific options */
-.rabbit-datamuse-contextual {
-    display: none;
-}
-
-/* Show contextual options only when contextual mode is selected */
-[data-datamuse-mode="contextual"] .rabbit-datamuse-contextual {
-    display: block;
 }
 
 /* Value displays */
