@@ -1,0 +1,187 @@
+// TDD tests for src/engine/synonym-scanner.js
+// Per design §8 (synonym-scanner.js) and the Task 11 plan:
+//   - tokenize last `scanDepth` messages
+//   - exclude stopwords (EN and RU sets)
+//   - build frequency counts
+//   - only words with count >= minOccurrences AND hasEntry()===true are returned
+//   - suggestions come from getSynonyms() and are non-empty, capped at 2
+//   - empty history → []
+//   - messages with no script characters (all emoji) are skipped gracefully
+//
+// The data/synonyms module is injected via opts so unit tests never touch the
+// real bundled assets.
+
+import { test, describe, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { findOverusedWords } from "../../src/engine/synonym-scanner.js";
+
+const enSynonyms = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("../fixtures/mini-en-synonyms.json", import.meta.url)),
+    "utf8"
+  )
+);
+const ruSynonyms = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("../fixtures/mini-ru-synonyms.json", import.meta.url)),
+    "utf8"
+  )
+);
+
+function makeSynonymsStub(dataByLang) {
+  return {
+    hasEntry: (lang, word) =>
+      Object.prototype.hasOwnProperty.call(dataByLang[lang] ?? {}, word),
+    getSynonyms: (lang, word) => (dataByLang[lang]?.[word]?.s) ?? [],
+  };
+}
+
+function baseSettings(scanDepth = 6, minOccurrences = 2) {
+  return {
+    synonyms: { scanDepth, minOccurrences },
+  };
+}
+
+describe("synonym-scanner — findOverusedWords", () => {
+  beforeEach(() => {
+    // Sanity: reset Math.random stubs if a previous test set them.
+    // No global state inside the module today, but keep the hook for future tests.
+  });
+
+  test("empty history returns []", () => {
+    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const result = findOverusedWords([], "en", baseSettings(), { synonyms });
+    assert.deepEqual(result, []);
+  });
+
+  test("tokenizes only last scanDepth messages", () => {
+    // 6 messages, but scanDepth=2 → only the last two count.
+    // "apple" appears 3× in older messages, but only 1× in the last two.
+    // "running" appears 3× in the last two → should be detected.
+    const history = [
+      "apple apple apple",
+      "nothing of interest here",
+      "nothing of interest here",
+      "nothing of interest here",
+      "running running running",
+      "apple once",
+    ];
+    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const result = findOverusedWords(history, "en", baseSettings(2, 2), { synonyms });
+    const words = result.map((r) => r.word).sort();
+    assert.deepEqual(words, ["running"]);
+  });
+
+  test("excludes English stopwords from frequency counts", () => {
+    // "the" appears 5× but is a stopword. "running" appears 3× and is not.
+    const history = [
+      "the the the the the running running running",
+    ];
+    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
+    const words = result.map((r) => r.word);
+    assert.deepEqual(words, ["running"]);
+  });
+
+  test("excludes Russian stopwords from frequency counts", () => {
+    // "и" is a RU stopword, appears many times. "яблоко" is not in the fixture
+    // but "бег" — let's use a word that exists in mini-ru-synonyms.
+    const history = [
+      "и и и и и бег бег бег",
+    ];
+    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const result = findOverusedWords(history, "ru", baseSettings(6, 2), { synonyms });
+    // Verify "и" was excluded — only "бег" should appear (if it has an entry).
+    const words = result.map((r) => r.word);
+    assert.ok(!words.includes("и"), "stopword 'и' must be excluded");
+    assert.ok(words.includes("бег"));
+  });
+
+  test("only returns words with count >= minOccurrences AND hasEntry===true", () => {
+    // "running" has entry and appears 3×. "ghost" has no entry and appears 3×.
+    // minOccurrences = 2.
+    const history = [
+      "running running running ghost ghost ghost",
+    ];
+    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
+    const words = result.map((r) => r.word);
+    assert.deepEqual(words, ["running"]);
+  });
+
+  test("words below minOccurrences are not returned", () => {
+    // "running" appears 2×, minOccurrences=3 → excluded.
+    const history = [
+      "running running",
+    ];
+    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const result = findOverusedWords(history, "en", baseSettings(6, 3), { synonyms });
+    assert.deepEqual(result, []);
+  });
+
+  test("suggestions are non-empty and come from getSynonyms()", () => {
+    const history = [
+      "running running running",
+    ];
+    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
+    assert.equal(result.length, 1);
+    assert.equal(result[0].word, "running");
+    assert.equal(result[0].count, 3);
+    assert.ok(result[0].suggestions.length > 0, "suggestions must be non-empty");
+    for (const s of result[0].suggestions) {
+      assert.ok(enSynonyms.running.s.includes(s), `suggestion ${s} must come from getSynonyms`);
+    }
+  });
+
+  test("suggestions are capped at top 2", () => {
+    // Build a stub where the synonym list for a word has 5 entries.
+    const synonyms = makeSynonymsStub({
+      en: { bigword: { s: ["a", "b", "c", "d", "e"] } },
+    });
+    const history = [
+      "bigword bigword bigword",
+    ];
+    const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
+    assert.equal(result.length, 1);
+    assert.ok(result[0].suggestions.length <= 2);
+    assert.equal(result[0].suggestions.length, 2);
+  });
+
+  test("messages with no script characters (all emoji) are skipped gracefully", () => {
+    const history = [
+      "😀 😂 🤔 🙃",
+      "😀 😂 🤔 🙃",
+    ];
+    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
+    assert.deepEqual(result, []);
+  });
+
+  test("count is accurate across all retained messages", () => {
+    const history = [
+      "apple apple",
+      "apple apple",
+      "apple apple",
+    ];
+    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
+    const entry = result.find((r) => r.word === "apple");
+    assert.ok(entry);
+    assert.equal(entry.count, 6);
+  });
+
+  test("uses default synonyms module when opts not provided (still safe on empty cache)", () => {
+    // Real module with unloaded cache → hasEntry returns false → empty result.
+    // No throw.
+    const result = findOverusedWords(
+      ["running running running"],
+      "en",
+      baseSettings(6, 2)
+    );
+    assert.deepEqual(result, []);
+  });
+});
