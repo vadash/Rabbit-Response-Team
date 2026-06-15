@@ -1,0 +1,23 @@
+{
+  "output": {
+    "filePath": "repomix-output.md",
+    "style": "markdown",
+    "showLineNumbers": true,
+    "truncateBase64": true,
+    "topFilesLength": 10
+  },
+  "include": [
+    "**/*"
+  ],
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "assets/**/*.json",
+      "repomix-output.*",
+      "node_modules/",
+      "logs/",
+      "scripts/raw/"
+    ]
+  }
+}

@@ -2,3 +2,4 @@
 node_modules/
 scripts/raw/
 nul
+repomix-output.*
