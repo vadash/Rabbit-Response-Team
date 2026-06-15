@@ -1,3 +1,6 @@
+> **Superseded by [`docs/designs/2026-06-15-offline-refactor.md`](designs/2026-06-15-offline-refactor.md).**
+> Kept for historical context. The plan below assumed a Node-only `better-sqlite3` runtime that does not apply to SillyTavern's browser-loaded client-side extension host — do not implement from this document.
+
 With a 100–200 MB budget, you have more than enough room to build a completely offline, production-grade linguistic system. You do not need heavy AI models or runtime-heavy databases. Instead, you will use pre-filtered, highly compressed SQLite databases and JSON arrays running directly inside Node.js. [1] 
 Here is the complete blueprint to build it.
 ------------------------------
