@@ -25,6 +25,7 @@ import {
   getAssociations,
   hasEntry,
 } from './data/synonyms.js';
+import { resolveLanguage } from './data/language.js';
 import { generateWords } from './engine/random-words.js';
 import {
   onPromptReady,
@@ -90,17 +91,7 @@ async function handlePromptReady(promptData) {
       Array.isArray(chat) && chat.length
         ? (chat.slice().reverse().find((m) => m?.is_user)?.mes ?? '')
         : '';
-    const detectLang = (text) => {
-      if (!text) return 'en';
-      const cyrillic = (text.match(/[Ѐ-ӿ]/g) || []).length;
-      const latin = (text.match(/[a-zÀ-ɏ]/gi) || []).length;
-      if (cyrillic === 0 && latin === 0) return 'en';
-      return cyrillic > latin ? 'ru' : 'en';
-    };
-    const resolved =
-      settings.language === 'auto' || !settings.language
-        ? detectLang(lastUser)
-        : settings.language;
+    const resolved = resolveLanguage(settings.language || 'auto', lastUser);
 
     await ensureAssetsForLanguage(resolved);
   } catch {
