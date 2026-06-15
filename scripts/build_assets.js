@@ -18,7 +18,15 @@ import { writeJsonAtomic } from "./lib/write-json.js";
 import { normalizeEn } from "./lib/normalize-en.js";
 import { normalizeRu } from "./lib/normalize-ru.js";
 import { extractEnSynonyms } from "./lib/wordnet-extract.js";
-import { extractRuSynonyms } from "./lib/yarn-extract.js";
+
+// Unbuffer stdout so progress prints flush immediately when piped.
+if (process.stdout.isTTY === false) {
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk, ...rest) => {
+    origWrite(chunk, ...rest);
+    return true;
+  };
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -141,44 +149,40 @@ function buildLanguage(lang, rawPath, normalize, extractSynonyms, yarnPath) {
   console.log(`[${lang}] Wrote ${path.relative(REPO_ROOT, wordsPath)}`);
 
   // Synonyms: walk the top SYNONYMS_TOP_N words in the trimmed bank.
-  // For RU, yarn-extract.js reloads+parses yarn.json on every call. With a
-  // ~15MB source and 20k lookups, that's 300GB of JSON parsing. Pre-trim
-  // yarn.json to only word-bank keys once, write a temp file, and point the
-  // extractor at it so each per-call load is cheap.
+  // y yarn-extract.js reloads+parses yarn.json on every call (~100ms each
+  // on a multi-MB file), so for RU we load yarn ONCE and do direct Map
+  // lookups instead of going through extractRuSynonyms per word. extractEnSynonyms
+  // caches its index at module scope, so the per-call cost is acceptable there.
   console.log(`[${lang}] Extracting synonyms (top ${BUILD.SYNONYMS_TOP_N})...`);
-  let effectiveYarnPath = yarnPath;
-  if (yarnPath) {
-    const yarnRaw = JSON.parse(fs.readFileSync(yarnPath, "utf-8"));
-    const bankSet = new Set(words.map(w => w[0]));
-    const trimmed = { synsets: {}, relations: {} };
-    if (yarnRaw.synsets) {
-      for (const k of Object.keys(yarnRaw.synsets)) {
-        if (bankSet.has(k)) trimmed.synsets[k] = yarnRaw.synsets[k];
-      }
-    }
-    if (yarnRaw.relations) {
-      for (const k of Object.keys(yarnRaw.relations)) {
-        if (bankSet.has(k)) trimmed.relations[k] = yarnRaw.relations[k];
-      }
-    }
-    const tmpDir = path.join(REPO_ROOT, "scripts", "raw", ".tmp");
-    fs.mkdirSync(tmpDir, { recursive: true });
-    effectiveYarnPath = path.join(tmpDir, `yarn-trimmed-${process.pid}.json`);
-    fs.writeFileSync(effectiveYarnPath, JSON.stringify(trimmed));
-    console.log(`[${lang}] Trimmed yarn: ${Object.keys(trimmed.synsets).length} syn / ${Object.keys(trimmed.relations).length} rel keys`);
-  }
-
   const synonyms = {};
   const limit = Math.min(BUILD.SYNONYMS_TOP_N, words.length);
-  for (let i = 0; i < limit; i++) {
-    const word = words[i][0];
-    const { s, a } = extractSynonyms(word, effectiveYarnPath);
-    if (s.length === 0 && a.length === 0) continue;
-    synonyms[word] = { s, a };
+
+  if (yarnPath) {
+    const yarnRaw = JSON.parse(fs.readFileSync(yarnPath, "utf-8"));
+    const synsets = yarnRaw.synsets ?? {};
+    const relations = yarnRaw.relations ?? {};
+    for (let i = 0; i < limit; i++) {
+      const word = words[i][0];
+      const s = (synsets[word] ?? []).slice(0, BUILD.SYNONYMS_PER_WORD);
+      const a = (relations[word] ?? []).slice(0, BUILD.ASSOCIATIONS_PER_WORD);
+      if (s.length === 0 && a.length === 0) continue;
+      synonyms[word] = { s, a };
+      if (i > 0 && i % 5000 === 0) {
+        process.stdout.write(`  [${lang}] ${i}/${limit}\r`);
+      }
+    }
+  } else {
+    for (let i = 0; i < limit; i++) {
+      const word = words[i][0];
+      const { s, a } = extractSynonyms(word);
+      if (s.length === 0 && a.length === 0) continue;
+      synonyms[word] = { s, a };
+      if (i > 0 && i % 2000 === 0) {
+        process.stdout.write(`  [${lang}] ${i}/${limit}\r`);
+      }
+    }
   }
-  if (effectiveYarnPath !== yarnPath) {
-    try { fs.unlinkSync(effectiveYarnPath); } catch { /* best-effort */ }
-  }
+  process.stdout.write(" ".repeat(40) + "\r");
   console.log(`[${lang}] Words with synonym entries: ${Object.keys(synonyms).length}`);
 
   const synonymsPath = path.join(REPO_ROOT, "assets", lang, "synonyms.json");
@@ -222,7 +226,7 @@ function main() {
   console.log("---");
   buildLanguage("en", enRaw, normalizeEn, extractEnSynonyms, null);
   console.log("---");
-  buildLanguage("ru", ruRaw, normalizeRu, extractRuSynonyms, yarnPath);
+  buildLanguage("ru", ruRaw, normalizeRu, null, yarnPath);
   console.log("---");
   console.log("Done. Run `node scripts/verify_assets.js` to validate.");
 }

@@ -1,3 +1,29 @@
 # SHA256 checksums of raw sources used in the most recent asset generation.
-# Fill these in after downloading raw sources per scripts/raw/README.md.
-# Format: <hash>  <filename> (two spaces, sha256sum compatible)
+# Raw files themselves are gitignored — see scripts/raw/README.md for
+# download URLs. Reproduce by downloading the files below and verifying
+# hashes match before running `npm run build`.
+#
+# Format: <hash>  <filename>  (two spaces, sha256sum-compatible)
+
+# English frequency list — https://github.com/hermitdave/FrequencyWords
+# (content/2018/en/en_full.txt, renamed locally)
+7fea67ab954e2c01df6c608c9826e594cf36f8823b3243554f88245fb75dc506  en-freq.txt
+
+# Russian frequency list — https://github.com/hermitdave/FrequencyWords
+# (content/2018/ru/ru_full.txt, renamed locally)
+32dfd94138aea2667ec455dcc8512029e39bd4b8ea70b09410d569b69d511a30  ru-freq.txt
+
+# Badestrand Russian Dictionary — https://github.com/Badestrand/russian-dictionary
+c388f9e6dde51932832be8d7e9afdbe9f0acee72fcf70677f0fe25ea61293c84  ru-nouns.csv
+89ab5d10dcd2f21f6b485de704aef372f32251468e3aa96f18b21e259f26b80a  ru-adjectives.csv
+8659de6799b949fb35f080b08088fb7d347ed300490954ebb380a31642646e1d  ru-verbs.csv
+9f22a16b17fc9a564298112168b667fced11aafb254ccebf5b7544fc37cdaa92  ru-others.csv
+
+# RuWordNet 2021 — https://github.com/avidale/python-ruwordnet/tree/master/data/rwn-2021
+4b96e6aecf79e83941e5cde874b051b12d59d351bbbfc6116e6ed5d365881ed6  rwn-senses-N.xml
+62555a90c2ff59c4193c75dd1c38862843c1b83f38fa81aa38961afa89463cf2  rwn-senses-V.xml
+dbac3bac1074ace81ad72b358dbd6b01b06ab83c7d99ace481e91e0aab0fe5f0  rwn-senses-A.xml
+58ed9d178df280ed93b06594ba4c84118f5e9c791f0c30e361af82bedb5bcf69  rwn-synsets-N.xml
+9d5085840cfc283c54c63c0dc2b4237ae0295a04c97f65925db4955df1a7fd3c  rwn-synsets-V.xml
+4c139a965debcdd64fe380cd55ac30098ae2a3b5472ddc434b5860c9cb4ea9ca  rwn-synsets-A.xml
+2945f78a7242f31e580df320aa13a28c13503389c43c2b1dd76ea82d338a91f5  rwn-relations-N.xml
