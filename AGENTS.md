@@ -48,7 +48,7 @@ ST globals (`extension_settings`, `saveSettingsDebounced`, `SillyTavern.getConte
 
 ### Bundled offline assets
 
-Word banks and synonym maps ship as committed JSON under `assets/{en,ru}/`. Sources (Datamuse wordfreq, `wordnet-db`, Badestrand Russian Dictionary, YARN) are processed by the build pipeline at `scripts/`. No network calls at runtime.
+Word banks and synonym maps ship as committed JSON under `assets/{en,ru}/`. Sources (FrequencyWords, `wordnet-db`, Badestrand Russian Dictionary, RuWordNet 2021) are processed by the build pipeline at `scripts/`. No network calls at runtime.
 
 ### Settings Structure
 

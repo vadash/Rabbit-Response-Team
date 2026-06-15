@@ -398,12 +398,14 @@ Asset bundles are fetched on first use, not at boot:
 
 | Source | Used for | License |
 |---|---|---|
-| Datamuse wordfreq or Google Ngram top-N | EN word frequency ranks | MIT / public |
-| `wordnet-db` (npm) | EN synonyms (synsets) + associations (hypernyms / hyponyms) | WordNet license |
-| [Badestrand Russian Dictionary](https://github.com/Badestrand/russian-dictionary) | RU word list with POS + frequency | MIT |
-| [YARN](https://github.com/napolnaya/YARN) | RU synonyms + associations | MIT |
+| [FrequencyWords](https://github.com/hermitdave/FrequencyWords) (`content/2018/{en,ru}/*_full.txt`) | EN + RU word frequency ranks | OpenSubtitles 2018 corpus (see note below) |
+| [`wordnet-db` (npm)](https://www.npmjs.com/package/wordnet-db) | EN synonyms (synsets) + associations (hypernyms / hyponyms) | Princeton WordNet license |
+| [Badestrand Russian Dictionary](https://github.com/Badestrand/russian-dictionary) (OpenRussian.org dump) | RU word list with POS | CC BY-SA 4.0 |
+| [RuWordNet 2021](https://github.com/avidale/python-ruwordnet/tree/master/data/rwn-2021) | RU synonyms (synset membership) + associations (hypernym / hyponym / related) | Apache 2.0 (wrapper); underlying RuWordNet 2.0 data per [ruwordnet.ru](http://ruwordnet.ru/en/) |
 
 Raw files live in `scripts/raw/` (gitignored). `scripts/SHA256SUMS` pins source versions.
+
+> **Corpus note (FrequencyWords).** Both the EN and RU frequency lists are derived from the OpenSubtitles 2018 corpus — i.e. subtitle dialogue, which skews informal and conversational. This is a deliberate trade-off: pulling EN and RU from the same corpus family keeps cross-language frequency ranks comparable and biases the word bank toward everyday, high-impact vocabulary — desirable properties for an LLM-pattern-disruption tool. It is not a balanced corpus (no academic, literary, or news register); if a balanced register becomes a requirement, swap in [Russian National Corpus](https://ruscorpora.ru/en/page/tool-freq/) frequency lists for RU and a comparable balanced source for EN.
 
 ### 10.2 Pipeline (per language)
 
@@ -411,7 +413,7 @@ Raw files live in `scripts/raw/` (gitignored). `scripts/SHA256SUMS` pins source 
 2. Filter: lowercase only; reject non-script characters; reject words shorter than 2 or longer than 20; dedupe (keep lowest rank).
 3. Sort by rank, take `WORDS_TOP_N`.
 4. Write `assets/{lang}/words.json`.
-5. Load synonym source (`wordnet-db` for EN; YARN JSON for RU).
+5. Load synonym source (`wordnet-db` for EN; RuWordNet 2021 XML for RU).
 6. For each word in the trimmed word bank (up to `SYNONYMS_TOP_N`):
    - collect synonyms (cap `SYNONYMS_PER_WORD`)
    - collect associations (cap `ASSOCIATIONS_PER_WORD`)
@@ -432,7 +434,7 @@ Runs as a postbuild hook (`npm run build` chains build → verify). Exits nonzer
 
 ### 10.4 Regeneration cadence
 
-WordNet / YARN update infrequently. Rebuild once per major source-data update. README documents the procedure.
+WordNet / RuWordNet update infrequently. Rebuild once per major source-data update. README documents the procedure.
 
 ## 11. Testing Strategy
 
