@@ -5,7 +5,7 @@
   "type": "module",
   "description": "SillyTavern extension — offline random-word injection to disrupt LLM patterns",
   "scripts": {
-    "build": "node scripts/build_assets.js",
+    "build": "node scripts/build_assets.js && node scripts/verify_assets.js",
     "verify": "node scripts/verify_assets.js",
     "test": "node --test \"tests/**/*.test.js\""
   },

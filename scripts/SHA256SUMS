@@ -1,0 +1,3 @@
+# SHA256 checksums of raw sources used in the most recent asset generation.
+# Fill these in after downloading raw sources per scripts/raw/README.md.
+# Format: <hash>  <filename> (two spaces, sha256sum compatible)
