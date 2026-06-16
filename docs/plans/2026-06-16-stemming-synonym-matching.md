@@ -2,9 +2,19 @@
 
 **Goal:** Add Porter (EN) + Snowball RU stemming behind a shared `normalize()` module used by both the build pipeline (asset keys) and the runtime (scanner + random-words picker), closing the existing ё/е asymmetry bug as a side effect.
 
-**Design doc:** `docs/designs/2026-06-16-stemming-synonym-matching.md`
+**Design doc:** `docs/designs/2026-06-16-stemming-synonym-matching.md` — **read §13 "Implementation deviations" before starting Tasks 7–10.** It records three deviations made during Task 6 that affect downstream tasks.
 
 **Testing conventions:** `node:test` + `node:assert/strict`. Fixtures loaded via `readFileSync(fileURLToPath(new URL("../fixtures/...", import.meta.url)))`. Module dependencies injected via `opts` (scanner) or `__setDepsForTest` (data/engine modules) so unit tests never touch the real bundled assets. Run with `npm test` (which expands `tests/**/*.test.js`).
+
+## ⚠ Deviations from original plan (recorded after Task 6, commit `3e02759`)
+
+Tasks 1–6 are complete. Task 6 uncovered three plan-level issues and resolved them by broadening Task 6's scope. Future executors must read `docs/designs/2026-06-16-stemming-synonym-matching.md` §13 in full. Quick summary:
+
+1. **`normalize` now iterates the stemmer to a fixed point** (≤8 iterations). Porter and Snowball are not idempotent on their own output (e.g. RU `"сказал" → "сказа" → "сказ"`). Without iteration, the Task 6 invariant is unsatisfiable and runtime lookup would miss build keys by one stem step. **For Tasks 7 & 8:** a chat token like `"госпожой"` now resolves to `"госпож"` (the same key the build emits), so runtime/build parity is automatic. Test stubs that name "already-stemmed forms" must use ACTUAL `normalize()` output (e.g. `"appl"` for `"apple"`, `"госпож"` for `"госпожа"`, `"ещ"` for `"ещё"`) — not the literal examples in this plan.
+2. **Verify check (d) was relaxed** to compare synonym keys against `normalize(headword, lang)` from `words.json`, not against the raw headword set. Required because Task 5 deliberately keeps `words.json` in headword form. Error message now ends with `"(nor its stem)"`.
+3. **Test (h) in `tests/scripts/verify_assets.test.js` was rewritten** to use an inline synthetic tree (already-stemmed keys) rather than `tests/fixtures/`. The fixtures remain headword-keyed until Task 9 re-stems them. Task 9 may optionally restore a fixture-based verify test.
+
+Built assets (`assets/{en,ru}/synonyms.json`) were re-committed in `3e02759` with the new fixed-point stems; the build pipeline passes end-to-end.
 
 ---
 
@@ -158,6 +168,8 @@
 
 **Depends on:** Task 2, Task 3.
 
+> **Deviation note (read design §13 first):** `normalize` now iterates to a fixed point, so inflected chat tokens (e.g. `"госпожой"`, `"сказал"`) resolve directly to the build's stem keys. When writing stub fixtures with "already-stemmed forms", compute the actual stems via `normalize()` rather than copying the literal examples in step 2 below — `normalize("apple","en") === "appl"`, not `"apple"`.
+
 **Files to modify/create:**
 - Modify: `src/engine/synonym-scanner.js` (Purpose: remove the local `tokenize` function at lines 14-18; import from `src/util/tokenize.js`; wrap the lookup token in `normalize(token, lang)` at the `hasEntry` and `getSynonyms` call sites around line 63-64)
 - Modify: `tests/engine/synonym-scanner.test.js` (Purpose: add inflected-input cases that would fail without normalization)
@@ -187,6 +199,8 @@
 
 **Depends on:** Task 2, Task 3.
 
+> **Deviation note (same as Task 7):** `normalize` iterates to a fixed point (design §13.3). Compute actual stem stubs via `normalize()`; do not copy literal examples like `"apple"` / `"госпож"` verbatim — they may be off by one stem step.
+
 **Files to modify/create:**
 - Modify: `src/engine/random-words.js` (Purpose: remove the local tokenizer at lines 53-55; import `extractTokens`; in `runContextual` around line 144, normalize candidate tokens before `hasEntry`; same for `getAssociations` around line 159)
 - Modify: `tests/engine/random-words.test.js` (Purpose: add a contextual-mode case where the user message contains an inflected form that resolves to a stemmed fixture key)
@@ -212,6 +226,8 @@
 **Objective:** The fixture files `tests/fixtures/mini-en-synonyms.json` and `tests/fixtures/mini-ru-synonyms.json` currently use headword keys. After the build pipeline stems keys (Task 5), the fixtures must match the new shape, and any test that references fixture keys by name must be updated.
 
 **Depends on:** Task 5, Task 7, Task 8 (so the consuming tests are already in place to catch fixture drift).
+
+> **Deviation note (read design §13 first):** `normalize` now iterates to a fixed point, so step 2's "compute `normalize(key, lang)`" yields fixed-point stems (e.g. `"houses" → "hou"`, `"сказал" → "сказ"`). Some stems look aggressive; trust the function output — the same invariant is verified against real assets. After re-stemming fixtures, you MAY optionally restore the fixture-based verify test that Task 6 converted to inline synthetic (see design §13.4); not required.
 
 **Files to modify/create:**
 - Modify: `tests/fixtures/mini-en-synonyms.json` (Purpose: replace headword keys with their Porter stems; merge colliding entries per union+dedupe)

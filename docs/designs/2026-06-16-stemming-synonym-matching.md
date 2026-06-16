@@ -1,7 +1,7 @@
 # Stemming for synonym matching
 
 **Date:** 2026-06-16
-**Status:** Proposed
+**Status:** Implemented (Tasks 1–6 of `docs/plans/2026-06-16-stemming-synonym-matching.md` complete; Tasks 7–10 pending). Two deviations from the original design were made during Task 6 — see §13 below.
 **Overturns (in part):** `docs/designs/2026-06-15-offline-refactor.md` §2 Non-Goals ("No stemming or lemmatization in synonym lookups").
 
 ## 1. Problem
@@ -39,6 +39,7 @@ The audit also flagged that the runtime tokenizer is duplicated across two engin
 3. **Scope:** Scanner + random-words picker. Both consume the new normalizer and the new unified tokenizer. Word bank untouched.
 4. **Normalize-layer shape:** New `src/util/normalize.js` exposes `normalize(word, lang)`. The full chain — `toLowerCase → trim → ё→е (RU only) → stem(lang)` — lives behind that single function. Both build scripts and runtime import it.
 5. **Collision policy:** When stemming collapses two distinct headwords to one stem at build time, union the `s[]` and `a[]` lists with dedupe-by-first-seen. Downstream `SUGGESTION_CAP = 2` (`src/engine/synonym-scanner.js:8`) truncates any noise.
+6. **Fixed-point iteration (added during Task 6, see §13):** `normalize` applies the stemmer repeatedly until output stabilises (max 8 iterations). Porter and Snowball are not idempotent on their own output — e.g. RU `"сказал" → "сказа" → "сказ"`, EN `"houses" → "hous" → "hou"`. Without iteration, the asset verifier's stem-key invariant (`key === normalize(key, lang)`) is unsatisfiable, and runtime token lookup would miss build-time keys by one stem step.
 
 ## 5. Architecture
 
@@ -64,15 +65,18 @@ scripts/
 ```js
 /**
  * Reduce a raw token to its canonical match key.
- * Pipeline: toLowerCase → trim → ё→е (RU only) → stem(lang).
+ * Pipeline: toLowerCase → trim → ё→е (RU only) → stem(lang) iterated to fixed point.
  * Non-string or empty input returns "" (never matches any key).
+ * Output is idempotent: normalize(x) === normalize(normalize(x)).
  */
 export function normalize(word, lang) → string
 ```
 
-- `lang === "en"` → Porter stemmer.
-- `lang === "ru"` → Snowball RU stemmer, with `ё→е` applied first.
+- `lang === "en"` → Porter stemmer, iterated until output stabilises (≤8 iterations).
+- `lang === "ru"` → Snowball RU stemmer (with `ё→е` applied first), iterated until output stabilises.
 - Any other `lang` → lowercased+trimmed word with no stemming. Defensive; should not occur given `resolveLanguage` only returns `"en"` or `"ru"`.
+
+**Why iterated (added Task 6 — see §13):** Porter and Snowball are not idempotent on their own output. A single application leaves keys that fail `key === normalize(key, lang)`, breaking both the asset verifier invariant and runtime-vs-build lookup parity.
 
 ### `src/util/tokenize.js`
 
@@ -107,7 +111,9 @@ Re-exports `normalize` from `../../src/util/normalize.js`. Build scripts import 
 
 **`scripts/prep/prep-yarn.js:34` ё→е step:** kept (idempotent; defense-in-depth for any future maintainer who skips the new normalizer).
 
-**`scripts/verify_assets.js`:** new check — every key in `synonyms.json` must equal `normalize(key, lang)`. Catches drift if someone hand-edits the asset.
+**`scripts/verify_assets.js`:** two checks touch the synonym/word linkage:
+- **New (Task 6):** every key in `synonyms.json` must equal `normalize(key, lang)`. Catches drift if someone hand-edits the asset. Works because `normalize` is now iterated to a fixed point (§4.6, §13.3).
+- **Relaxed (Task 6, see §13.2):** the pre-existing check (d) "every synonym key must exist in `words.json`" now compares via `normalize()`: a synonym key (a stem) must equal `normalize(headword, lang)` for some headword in `words.json`. Required because Task 5 deliberately leaves `words.json` in headword form while `synonyms.json` keys are stems.
 
 ## 8. Runtime changes
 
@@ -153,3 +159,37 @@ Re-exports `normalize` from `../../src/util/normalize.js`. Build scripts import 
 
 - **Irregular EN verb/noun lemmatization.** Address only with real-chat evidence (e.g. a sample chat log showing repeated `"went"`/`"was"`/`"mice"` misses). Likely fix: tiny curated exception map layered before Porter, or swap to `compromise.js` (~250KB).
 - **Russian lemmatization** (Az.js) for cases where Snowball over-collapses distinct lemmas to the same stem. Same trigger: evidence first.
+
+## 13. Implementation deviations (recorded 2026-06-16, after Task 6)
+
+Three issues surfaced during Task 6's end-to-end `npm run build && npm run verify` step that the original plan did not anticipate. All three were resolved in commit `3e02759` ("feat(scripts): verify synonyms.json keys are stemmed") as part of Task 6, broadening its scope. Future maintainers and executors of Tasks 7–10 must read this section.
+
+### 13.1 Built assets were stale after Task 5
+
+Task 5 modified `scripts/build_assets.js` and `scripts/lib/stemmer.js` but did **not** re-run `npm run build` and re-commit `assets/{en,ru}/synonyms.json`. The committed assets still contained headword keys. Task 6 rebuilt them; the rebuilt assets now contain fixed-point stems.
+
+### 13.2 Verify check (d) was incompatible with stemmed synonym keys
+
+The pre-existing check (d) asserted "every synonym key must exist in `words.json`". Task 5 deliberately leaves `words.json` in headword form (Task 5 step 3: "Leave the `words.json` emit path untouched") while stemming `synonyms.json` keys. These two invariants are mutually exclusive. Check (d) now builds a set of `normalize(headword, lang)` stems from `words.json` and asserts each synonym key is in that set. Error message: `"${lang}/synonyms.json: key \"${word}\" not found in words.json (nor its stem)"`.
+
+### 13.3 The stemmer is not idempotent — `normalize` now iterates to a fixed point
+
+Porter (EN) and Snowball (RU) do not satisfy `stem(stem(x)) === stem(x)`:
+- RU: `normalize("сказал", "ru") → "сказа"`, but `normalize("сказа", "ru") → "сказ"`. ~4,547 of 15,849 keys affected.
+- EN: `normalize("houses", "en") → "hous"`, but `normalize("hous", "en") → "hou"`. ~520 of 14,689 keys affected.
+
+The plan's Task 6 invariant `key === normalize(key, lang)` is unsatisfiable as written. `normalize` (in `src/util/normalize.js`) now iterates the stemmer until output stabilises, with a safety cap of 8 iterations. This makes `normalize` idempotent: `normalize(x) === normalize(normalize(x))`. The invariant now holds.
+
+**Implication for runtime (Tasks 7, 8):** chat tokens also go through `normalize` at lookup time, so a chat token `"сказал"` resolves to `"сказ"` — the same key the build emits. Without fixed-point iteration, runtime would have produced `"сказа"` and missed every multi-step-stemmed asset key. Task 7/8 executors can rely on this.
+
+**Implication for Task 9 fixture work:** the plan's step 2 ("compute `normalize(key, lang)` using the actual function, do not hand-compute") now produces fixed-point stems automatically. Callers should not be surprised that some stems look aggressive (e.g. `"houses" → "hou"`, `"госпожой → госпож"`, `"сказал → сказал → сказ"`). Trust the function output; the verifier has already validated the same invariant against the real assets.
+
+### 13.4 Test (h) in `tests/scripts/verify_assets.test.js` was rewritten
+
+The original test (h) "clean synthetic assets under `tests/fixtures` pass" iterated `tests/fixtures/mini-{en,ru}-synonyms.json`. After Task 5, those fixtures still use headword keys and would fail the new stem invariant. Rather than re-stem fixtures mid-Task-6 (Task 9's job), test (h) was rewritten to use an in-memory synthetic tree with already-stemmed keys, asserting only that no stem-invariant error fires. Task 9 may optionally restore the fixture-based form once fixtures are re-stemmed.
+
+### 13.5 Debug logging added
+
+- `DEBUG_VERIFY=1` → `scripts/verify_assets.js` prints per-step stderr: `[verify] start`, per-lang `words.json` stem count, stem-invariant scan progress at 10% intervals, full offender list (≤50), `[verify] done` summary.
+- `DEBUG_BUILD=1` → `scripts/build_assets.js` prints sample merged-collision entries in the stem-merge step. Default build log now also reports input-headword vs output-stem count and the collision delta.
+
