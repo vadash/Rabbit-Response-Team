@@ -107,10 +107,23 @@ This test covers the synonym redesign shipped under `docs/designs/2026-06-16-syn
 7. **Independent depth/role:** set **Synonyms → Injection Depth** to `4` and **Random Words → Injection Depth** to `0`. Trigger another Generate.
    - **Expected:** the synonym slot lands at depth `4` (visible via SillyTavern's prompt inspector or devtools) while the random-words slot remains at depth `0`. The two slots' depth/role settings must be fully independent — changing one must not move the other.
 
+## Test 9 — Stemmed synonym matching (inflected input)
+
+This test covers the stemming pipeline shipped under `docs/designs/2026-06-16-stemming-synonym-matching.md`. Synonym lookups now normalize chat tokens through Porter (EN) / Snowball RU + `ё→е` before matching `synonyms.json` keys, so inflected and case-form chat tokens resolve to the same stem key the build emits.
+
+1. **EN inflected token matches stem key:** with **Synonyms → Enabled** on, **Scan Depth** wide enough to cover several recent messages, and **Min Occurrences** at `3`, paste or send assistant messages containing the word `"running"` at least three times within the scan window.
+   - **Expected:** the synonym freshness prompt fires for the `"run"` stem — the toast / rendered slot surfaces avoidance suggestions sourced from the `"run"` entry in `assets/en/synonyms.json`, even though the chat never contained the bare token `"run"`.
+2. **RU case-form token matches stem key:** switch **Language** to `ru` (or `auto` with Russian input). Send 3+ assistant messages containing `"госпожой"`.
+   - **Expected:** the synonym prompt fires for the `"госпож"` stem — the inflected instrumental form resolves to the same key the build emits for `госпожа`/`госпожой`/`госпожи`.
+3. **ё/е regression (closed bug):** send 3+ assistant messages containing `"ещё"`.
+   - **Expected:** the prompt fires against the `"еще"` key (build-side keys apply `ё→е`; the chat-side `ё` must normalize to `е` for the match to succeed). This is the regression check for the ё/е asymmetry bug that motivated the stemming work.
+4. **Random-words picker unaffected:** toggle **Random Words → Enabled** on and trigger a Generate.
+   - **Expected:** the random-words slot still injects **headword-form** words (e.g. `"госпожа"`, not the stem `"госпож"`). The random / double-pass / contextual generation paths draw from `words.json` and the un-stemmed `s` / `a` value arrays — display output must show full headwords, never stems.
+
 ---
 
 ## Pass Criteria
 
-- All eight tests produce the expected log lines and prompt-debugger state.
+- All nine tests produce the expected log lines and prompt-debugger state.
 - No uncaught exceptions appear in the console (only intentional `warn` calls from the fail-safe path).
 - The model's generation is never blocked or interrupted by this extension.

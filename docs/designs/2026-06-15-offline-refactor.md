@@ -18,7 +18,7 @@ Convert Rabbit Response Team from a hybrid online/offline SillyTavern extension 
 ## 2. Non-Goals
 
 - No definitions in the dataset (current extension does not use them).
-- No stemming or lemmatization in synonym lookups.
+- No stemming or lemmatization in synonym lookups. _(Overturned 2026-06-16 — see docs/designs/2026-06-16-stemming-synonym-matching.md.)_
 - No first-letter filter (the Vercel API's `letter` parameter is dropped without replacement).
 - No CI pipeline (none exists today; can be added later).
 - No bundler for runtime code. No TypeScript.
