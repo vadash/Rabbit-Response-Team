@@ -1,19 +1,18 @@
-// Prompt injector orchestrator.
+// Prompt injector — pure compute layer.
 // Per design §8 (injector.js), §9.3 (failure modes). Sits at the top of the
-// engine layer: resolves language, dispatches to random-words and synonym
-// engines, renders templates, and splices rendered prompts into promptData.chat.
+// engine layer: resolves no language itself (lang is a parameter), dispatches
+// to random-words and synonym engines, renders templates, and returns
+// { random, synonyms } slot descriptors for the caller to apply via
+// setExtensionPrompt. Engine layer is free of ST globals.
 //
-// All collaborators (settings provider, context, data modules, warn sink) are
-// injected via __setDepsForTest so unit tests never touch real assets or ST
-// globals. src/index.js wires the real deps at boot.
+// Collaborators (data modules + warn sink) are injected via __setDepsForTest
+// so unit tests never touch real assets or ST globals. src/index.js wires
+// the real deps at boot.
 
-import { resolveLanguage } from "../data/language.js";
 import { generateWords } from "./random-words.js";
 import { findOverusedWords } from "./synonym-scanner.js";
 
 let deps = {
-  getSettings: () => null,
-  getContext: () => ({ chat: [] }),
   words: null,
   synonyms: null,
   warn: (...args) => {
@@ -40,117 +39,81 @@ function renderTemplate(template, vars) {
   return out;
 }
 
-function computeInsertIndex(depth, chatLength) {
-  const d = Number.isFinite(depth) ? Math.max(0, Math.floor(depth)) : 0;
-  return Math.min(d, chatLength);
-}
-
-function messageText(msg) {
-  if (!msg) return "";
-  return msg.mes ?? msg.content ?? "";
-}
-
-function lastUserText(chat) {
-  for (let i = chat.length - 1; i >= 0; i--) {
-    const m = chat[i];
-    if (!m) continue;
-    const role = m.role ?? (m.is_user ? "user" : "assistant");
-    if (role === "user") return messageText(m);
+// Map a role string from settings to a setExtensionPrompt role index.
+// Unknown values fall back to SYSTEM (0) and emit a warn so misconfigs are
+// traceable rather than silent.
+function mapRole(roleStr) {
+  switch (roleStr) {
+    case "system":
+      return 0;
+    case "user":
+      return 1;
+    case "assistant":
+      return 2;
+    default:
+      deps.warn(
+        `Rabbit Response Team: unknown injectionEndRole '${roleStr}', falling back to system (0).`
+      );
+      return 0;
   }
-  return "";
 }
 
-// Build all rendered injection messages BEFORE mutating promptData. If any
-// rendering fails, no splice happens — satisfies design §9.3 "broken '{{' →
-// prompt unchanged".
-async function buildInjections(settings, lang, userMessage, chatHistoryTexts) {
-  const rw = settings.randomWords ?? {};
-  const syn = settings.synonyms ?? {};
-  const out = [];
+/**
+ * Build rendered injection descriptors for the current turn, without touching
+ * ST globals or promptData. Each slot is computed independently; a disabled
+ * feature, an empty result, or a rendering failure yields `null` for that
+ * slot so the caller can skip it cleanly.
+ *
+ * @param {object} settings           Full settings object.
+ * @param {"en"|"ru"} lang            Resolved language for this turn.
+ * @param {string} userMessage        Latest user message text (contextual mode).
+ * @param {string[]} chatTexts        Recent chat message texts for synonym scan.
+ * @returns {Promise<{ random: {content:string,depth:number,role:number}|null, synonyms: {content:string,depth:number,role:number}|null }>}
+ */
+export async function buildInjections(settings, lang, userMessage, chatTexts) {
+  const rw = settings?.randomWords ?? {};
+  const syn = settings?.synonyms ?? {};
+  const depth = rw.injectionDepth ?? 0;
+  const role = mapRole(rw.injectionEndRole ?? "system");
+
+  let randomSlot = null;
+  let synonymsSlot = null;
 
   if (rw.enabled) {
-    const words = await generateWords(lang, settings, userMessage, {
-      words: deps.words,
-      synonyms: deps.synonyms,
-      history: new Set(),
-    });
-    if (Array.isArray(words) && words.length > 0) {
-      const formatted = words.map((w) => `"${w}"`).join(", ");
-      const rendered = renderTemplate(rw.customPrompt, { words: formatted });
-      out.push({
-        depth: rw.injectionDepth ?? 0,
-        role: rw.injectionEndRole ?? "system",
-        content: rendered,
+    try {
+      const words = await generateWords(lang, settings, userMessage, {
+        words: deps.words,
+        synonyms: deps.synonyms,
+        history: new Set(),
       });
+      if (Array.isArray(words) && words.length > 0) {
+        const formatted = words.map((w) => `"${w}"`).join(", ");
+        const rendered = renderTemplate(rw.customPrompt, { words: formatted });
+        randomSlot = { content: rendered, depth, role };
+      }
+    } catch (err) {
+      deps.warn("Rabbit Response Team: random slot failed:", err);
     }
   }
 
   if (syn.enabled) {
-    const overused = findOverusedWords(chatHistoryTexts, lang, settings, {
-      synonyms: deps.synonyms,
-    });
-    if (Array.isArray(overused) && overused.length > 0) {
-      const target = overused[0];
-      const formatted = target.suggestions.map((w) => `"${w}"`).join(", ");
-      const rendered = renderTemplate(syn.customPrompt, {
-        originalWord: target.word,
-        synonyms: formatted,
+    try {
+      const overused = findOverusedWords(chatTexts, lang, settings, {
+        synonyms: deps.synonyms,
       });
-      out.push({
-        depth: rw.injectionDepth ?? 0,
-        role: rw.injectionEndRole ?? "system",
-        content: rendered,
-      });
+      if (Array.isArray(overused) && overused.length > 0) {
+        const target = overused[0];
+        const formatted = target.suggestions.map((w) => `"${w}"`).join(", ");
+        const rendered = renderTemplate(syn.customPrompt, {
+          originalWord: target.word,
+          synonyms: formatted,
+        });
+        synonymsSlot = { content: rendered, depth, role };
+      }
+    } catch (err) {
+      deps.warn("Rabbit Response Team: synonyms slot failed:", err);
     }
   }
 
-  return out;
-}
-
-/**
- * SillyTavern CHAT_COMPLETION_PROMPT_READY handler.
- * Resolves language for the current turn, dispatches to the random-words and
- * synonym engines, renders templates, and splices rendered prompts into
- * promptData.chat. Any error is caught and logged so a broken custom prompt
- * or asset miss never breaks the user's chat turn.
- *
- * @param {{ chat?: Array<{role: string, content: string}> }} promptData
- * @returns {Promise<typeof promptData>}
- */
-export async function onPromptReady(promptData) {
-  if (!promptData || !Array.isArray(promptData.chat)) return promptData;
-
-  const settings = deps.getSettings();
-  if (!settings) return promptData;
-
-  const rw = settings.randomWords ?? {};
-  const syn = settings.synonyms ?? {};
-  if (!rw.enabled && !syn.enabled) return promptData;
-
-  try {
-    const ctx = deps.getContext() ?? {};
-    const ctxChat = Array.isArray(ctx.chat) ? ctx.chat : [];
-    const userMessage = lastUserText(ctxChat);
-    const chatTexts = ctxChat.map(messageText);
-    const lang = resolveLanguage(settings.language ?? "auto", userMessage);
-
-    const injections = await buildInjections(
-      settings,
-      lang,
-      userMessage,
-      chatTexts
-    );
-
-    // Apply highest-depth first so earlier indices remain stable as later
-    // splices grow the array.
-    injections.sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0));
-    for (const inj of injections) {
-      const idx = computeInsertIndex(inj.depth, promptData.chat.length);
-      promptData.chat.splice(idx, 0, { role: inj.role, content: inj.content });
-    }
-  } catch (err) {
-    deps.warn("Rabbit Response Team: onPromptReady failed:", err);
-  }
-
-  return promptData;
+  return { random: randomSlot, synonyms: synonymsSlot };
 }
