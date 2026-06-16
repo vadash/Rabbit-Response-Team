@@ -18,6 +18,7 @@ import { writeJsonAtomic } from "./lib/write-json.js";
 import { normalizeEn } from "./lib/normalize-en.js";
 import { normalizeRu } from "./lib/normalize-ru.js";
 import { extractEnSynonyms } from "./lib/wordnet-extract.js";
+import { stemAndMergeSynonyms } from "./lib/stemmer.js";
 
 // Unbuffer stdout so progress prints flush immediately when piped.
 if (process.stdout.isTTY === false) {
@@ -185,8 +186,12 @@ function buildLanguage(lang, rawPath, normalize, extractSynonyms, yarnPath) {
   process.stdout.write(" ".repeat(40) + "\r");
   console.log(`[${lang}] Words with synonym entries: ${Object.keys(synonyms).length}`);
 
+  console.log(`[${lang}] Stemming synonym keys + merging collisions...`);
+  const stemmed = stemAndMergeSynonyms(synonyms, lang);
+  console.log(`[${lang}] After stem+merge: ${Object.keys(stemmed).length} keys`);
+
   const synonymsPath = path.join(REPO_ROOT, "assets", lang, "synonyms.json");
-  writeJsonAtomic(synonymsPath, synonyms);
+  writeJsonAtomic(synonymsPath, stemmed);
   console.log(`[${lang}] Wrote ${path.relative(REPO_ROOT, synonymsPath)}`);
 }
 
