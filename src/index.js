@@ -176,9 +176,11 @@ async function handleGeneration(type, options, dryRun) {
       return;
     }
 
-    const chatTexts = (ctxChat ?? []).map(
-      (m) => m?.mes ?? m?.content ?? '',
-    );
+    // Synonym scanner is assistant-only: exclude user messages so the
+    // frequency map reflects the model's own diction, not the user's.
+    const chatTexts = (ctxChat ?? [])
+      .filter((m) => m && m.is_user === false)
+      .map((m) => m?.mes ?? m?.content ?? '');
     const result = await buildInjections(
       settings,
       resolved,
