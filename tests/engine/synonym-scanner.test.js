@@ -185,3 +185,109 @@ describe("synonym-scanner — findOverusedWords", () => {
     assert.deepEqual(result, []);
   });
 });
+
+describe("sorting and topN", () => {
+  // Inline stub with arbitrary words so we can craft exact frequency scenarios
+  // without touching the shared fixture.
+  function stub(words) {
+    const data = {};
+    for (const w of words) data[w] = { s: ["syn-" + w, "syn2-" + w] };
+    return makeSynonymsStub({ en: data });
+  }
+
+  test("sorts by count descending", () => {
+    // A=5, B=3, C=4 → expect [A, C, B]
+    const history = [
+      "alpha alpha alpha alpha alpha",
+      "bravo bravo bravo",
+      "charlie charlie charlie charlie",
+    ];
+    const synonyms = stub(["alpha", "bravo", "charlie"]);
+    const result = findOverusedWords(
+      history,
+      "en",
+      { synonyms: { scanDepth: 6, minOccurrences: 2, topN: 10 } },
+      { synonyms }
+    );
+    const words = result.map((r) => r.word);
+    assert.deepEqual(words, ["alpha", "charlie", "bravo"]);
+  });
+
+  test("alphabetical tiebreaker for equal counts", () => {
+    // zebra=3, apple=3 → expect ["apple", "zebra"]
+    const history = [
+      "zebra zebra zebra",
+      "apple apple apple",
+    ];
+    const synonyms = stub(["zebra", "apple"]);
+    const result = findOverusedWords(
+      history,
+      "en",
+      { synonyms: { scanDepth: 6, minOccurrences: 2, topN: 10 } },
+      { synonyms }
+    );
+    const words = result.map((r) => r.word);
+    assert.deepEqual(words, ["apple", "zebra"]);
+  });
+
+  test("topN cap respected — keeps highest frequency", () => {
+    // 3 eligible words with counts 5, 4, 3. topN=2 → keep the two highest.
+    const history = [
+      "alpha alpha alpha alpha alpha",
+      "bravo bravo bravo bravo",
+      "charlie charlie charlie",
+    ];
+    const synonyms = stub(["alpha", "bravo", "charlie"]);
+    const result = findOverusedWords(
+      history,
+      "en",
+      { synonyms: { scanDepth: 6, minOccurrences: 2, topN: 2 } },
+      { synonyms }
+    );
+    assert.equal(result.length, 2);
+    assert.deepEqual(
+      result.map((r) => r.word),
+      ["alpha", "bravo"]
+    );
+  });
+
+  test("topN larger than pool — no padding", () => {
+    const history = [
+      "alpha alpha alpha alpha alpha",
+      "bravo bravo bravo",
+    ];
+    const synonyms = stub(["alpha", "bravo"]);
+    const result = findOverusedWords(
+      history,
+      "en",
+      { synonyms: { scanDepth: 6, minOccurrences: 2, topN: 10 } },
+      { synonyms }
+    );
+    assert.equal(result.length, 2);
+  });
+
+  test("topN missing from settings — falls back to default of 3", () => {
+    // 4 eligible words; without topN, expect at most 3 returned.
+    const history = [
+      "alpha alpha alpha alpha",
+      "bravo bravo bravo",
+      "charlie charlie charlie",
+      "delta delta delta",
+    ];
+    const synonyms = stub(["alpha", "bravo", "charlie", "delta"]);
+    const result = findOverusedWords(
+      history,
+      "en",
+      { synonyms: { scanDepth: 6, minOccurrences: 2 } },
+      { synonyms }
+    );
+    assert.ok(result.length <= 3, "result must be capped at default 3");
+    assert.equal(result.length, 3);
+    // Highest three by count: alpha(4), and bravo/charlie/delta all tie at 3.
+    // Tiebreaker is alphabetical — expect bravo, charlie kept (delta dropped).
+    assert.deepEqual(
+      result.map((r) => r.word),
+      ["alpha", "bravo", "charlie"]
+    );
+  });
+});

@@ -6,6 +6,7 @@
 import { STOPWORDS_EN, STOPWORDS_RU } from "../data/language.js";
 
 const SUGGESTION_CAP = 2;
+const DEFAULT_TOP_N = 3;
 
 // Tokenize a message into lowercase word tokens. Splits on anything that is
 // not a letter (Latin or Cyrillic). Single-character tokens and pure-emoji
@@ -66,5 +67,14 @@ export function findOverusedWords(chatHistory, lang, settings, opts = {}) {
     result.push({ word, count, suggestions });
   }
 
-  return result;
+  result.sort(
+    (a, b) => b.count - a.count || a.word.localeCompare(b.word)
+  );
+
+  const topN =
+    Number.isInteger(synSettings.topN) && synSettings.topN > 0
+      ? synSettings.topN
+      : DEFAULT_TOP_N;
+
+  return result.slice(0, topN);
 }
