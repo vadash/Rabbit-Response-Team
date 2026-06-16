@@ -51,7 +51,7 @@ describe("synonyms.js — lazy loading", () => {
 
   test("ensureSynonymsLoaded populates the cache", async () => {
     await ensureSynonymsLoaded("en");
-    assert.equal(hasEntry("en", "apple"), true);
+    assert.equal(hasEntry("en", "appl"), true);
   });
 
   test("ensureSynonymsLoaded is idempotent (second call does not refetch)", async () => {
@@ -71,12 +71,12 @@ describe("synonyms.js — lazy loading", () => {
   test("each language has an independent cache slot", async () => {
     await ensureSynonymsLoaded("en");
     await ensureSynonymsLoaded("ru");
-    assert.equal(hasEntry("en", "apple"), true);
-    assert.equal(hasEntry("ru", "яблоко"), true);
+    assert.equal(hasEntry("en", "appl"), true);
+    assert.equal(hasEntry("ru", "яблок"), true);
   });
 
   test("hasEntry returns false before loading", () => {
-    assert.equal(hasEntry("en", "apple"), false);
+    assert.equal(hasEntry("en", "appl"), false);
   });
 });
 
@@ -88,14 +88,14 @@ describe("synonyms.js — lookups", () => {
 
   test("known word with both fields returns expected arrays", async () => {
     await ensureSynonymsLoaded("en");
-    assert.deepEqual(getSynonyms("en", "apple"), ["fruit", "pome"]);
-    assert.deepEqual(getAssociations("en", "apple"), ["orchard", "tree", "harvest"]);
+    assert.deepEqual(getSynonyms("en", "appl"), ["fruit", "pome"]);
+    assert.deepEqual(getAssociations("en", "appl"), ["orchard", "tree", "harvest"]);
   });
 
   test("known word with only s returns [] from getAssociations", async () => {
     await ensureSynonymsLoaded("en");
-    assert.deepEqual(getSynonyms("en", "gentle"), ["soft", "tender"]);
-    assert.deepEqual(getAssociations("en", "gentle"), []);
+    assert.deepEqual(getSynonyms("en", "gentl"), ["soft", "tender"]);
+    assert.deepEqual(getAssociations("en", "gentl"), []);
   });
 
   test("known word with only a returns [] from getSynonyms", async () => {
@@ -116,7 +116,7 @@ describe("synonyms.js — lookups", () => {
 
   test("hasEntry returns true for a known word", async () => {
     await ensureSynonymsLoaded("en");
-    assert.equal(hasEntry("en", "apple"), true);
+    assert.equal(hasEntry("en", "appl"), true);
   });
 
   test("hasEntry returns false for an unknown word", async () => {
@@ -125,13 +125,13 @@ describe("synonyms.js — lookups", () => {
   });
 
   test("lookups return [] before loading", () => {
-    assert.deepEqual(getSynonyms("en", "apple"), []);
-    assert.deepEqual(getAssociations("en", "apple"), []);
+    assert.deepEqual(getSynonyms("en", "appl"), []);
+    assert.deepEqual(getAssociations("en", "appl"), []);
   });
 
   test("works with Russian fixtures", async () => {
     await ensureSynonymsLoaded("ru");
-    assert.deepEqual(getSynonyms("ru", "яблоко"), ["фрукт", "плод"]);
-    assert.deepEqual(getAssociations("ru", "яблоко"), ["сад", "дерево"]);
+    assert.deepEqual(getSynonyms("ru", "яблок"), ["фрукт", "плод"]);
+    assert.deepEqual(getAssociations("ru", "яблок"), ["сад", "дерево"]);
   });
 });

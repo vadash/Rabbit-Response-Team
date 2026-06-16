@@ -1,6 +1,6 @@
 {
-  "apple":   { "s": ["fruit", "pome"],          "a": ["orchard", "tree", "harvest"] },
-  "running": { "s": ["jogging", "sprinting"],   "a": ["race", "marathon", "track"] },
-  "gentle":  { "s": ["soft", "tender"] },
-  "whisper": { "a": ["murmur", "hush"] }
+  "appl":   { "s": ["fruit", "pome"],          "a": ["orchard", "tree", "harvest"] },
+  "run":    { "s": ["jogging", "sprinting"],   "a": ["race", "marathon", "track"] },
+  "gentl":  { "s": ["soft", "tender"] },
+  "whisper":{ "a": ["murmur", "hush"] }
 }

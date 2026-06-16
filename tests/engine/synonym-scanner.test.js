@@ -82,7 +82,7 @@ describe("synonym-scanner — findOverusedWords", () => {
       "running running running",
       "apple once",
     ];
-    const synonyms = stemKeyedStub("en", { running: enSynonyms.running });
+    const synonyms = stemKeyedStub("en", { running: enSynonyms.run });
     const result = findOverusedWords(history, "en", baseSettings(2, 2), { synonyms });
     const words = result.map((r) => r.word).sort();
     assert.deepEqual(words, ["running"]);
@@ -93,7 +93,7 @@ describe("synonym-scanner — findOverusedWords", () => {
     const history = [
       "the the the the the running running running",
     ];
-    const synonyms = stemKeyedStub("en", { running: enSynonyms.running });
+    const synonyms = stemKeyedStub("en", { running: enSynonyms.run });
     const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
     const words = result.map((r) => r.word);
     assert.deepEqual(words, ["running"]);
@@ -119,7 +119,7 @@ describe("synonym-scanner — findOverusedWords", () => {
     const history = [
       "running running running ghost ghost ghost",
     ];
-    const synonyms = stemKeyedStub("en", { running: enSynonyms.running });
+    const synonyms = stemKeyedStub("en", { running: enSynonyms.run });
     const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
     const words = result.map((r) => r.word);
     assert.deepEqual(words, ["running"]);
@@ -130,7 +130,7 @@ describe("synonym-scanner — findOverusedWords", () => {
     const history = [
       "running running",
     ];
-    const synonyms = stemKeyedStub("en", { running: enSynonyms.running });
+    const synonyms = stemKeyedStub("en", { running: enSynonyms.run });
     const result = findOverusedWords(history, "en", baseSettings(6, 3), { synonyms });
     assert.deepEqual(result, []);
   });
@@ -139,14 +139,14 @@ describe("synonym-scanner — findOverusedWords", () => {
     const history = [
       "running running running",
     ];
-    const synonyms = stemKeyedStub("en", { running: enSynonyms.running });
+    const synonyms = stemKeyedStub("en", { running: enSynonyms.run });
     const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
     assert.equal(result.length, 1);
     assert.equal(result[0].word, "running");
     assert.equal(result[0].count, 3);
     assert.ok(result[0].suggestions.length > 0, "suggestions must be non-empty");
     for (const s of result[0].suggestions) {
-      assert.ok(enSynonyms.running.s.includes(s), `suggestion ${s} must come from getSynonyms`);
+      assert.ok(enSynonyms.run.s.includes(s), `suggestion ${s} must come from getSynonyms`);
     }
   });
 
@@ -181,7 +181,7 @@ describe("synonym-scanner — findOverusedWords", () => {
       "apple apple",
       "apple apple",
     ];
-    const synonyms = stemKeyedStub("en", { apple: enSynonyms.apple });
+    const synonyms = stemKeyedStub("en", { apple: enSynonyms.appl });
     const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
     const entry = result.find((r) => r.word === "apple");
     assert.ok(entry);
