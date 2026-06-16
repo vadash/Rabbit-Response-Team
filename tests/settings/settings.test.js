@@ -8,6 +8,7 @@ import {
   saveSettings,
   DEFAULT_RANDOM_PROMPT,
   DEFAULT_SYNONYM_PROMPT,
+  DEFAULT_SYNONYM_PROMPT_ROW,
   __setDepsForTest,
 } from "../../src/settings.js";
 
@@ -39,18 +40,28 @@ describe("settings — defaults", () => {
     assert.equal(defaultSettings.randomWords.mode, "random");
     assert.equal(defaultSettings.randomWords.customPrompt, DEFAULT_RANDOM_PROMPT);
     assert.equal(defaultSettings.synonyms.enabled, false);
-    assert.equal(defaultSettings.synonyms.scanDepth, 6);
-    assert.equal(defaultSettings.synonyms.minOccurrences, 3);
+    assert.equal(defaultSettings.synonyms.scanDepth, 10);
+    assert.equal(defaultSettings.synonyms.minOccurrences, 5);
+    assert.equal(defaultSettings.synonyms.topN, 3);
+    assert.equal(defaultSettings.synonyms.outputMode, "with-suggestions");
+    assert.equal(defaultSettings.synonyms.injectionDepth, 0);
+    assert.equal(defaultSettings.synonyms.injectionEndRole, "system");
     assert.equal(defaultSettings.synonyms.customPrompt, DEFAULT_SYNONYM_PROMPT);
+    assert.equal(defaultSettings.synonyms.customPromptRow, DEFAULT_SYNONYM_PROMPT_ROW);
   });
 
   test("DEFAULT_RANDOM_PROMPT contains {{words}} placeholder", () => {
     assert.ok(DEFAULT_RANDOM_PROMPT.includes("{{words}}"));
   });
 
-  test("DEFAULT_SYNONYM_PROMPT contains {{originalWord}} and {{synonyms}} placeholders", () => {
-    assert.ok(DEFAULT_SYNONYM_PROMPT.includes("{{originalWord}}"));
-    assert.ok(DEFAULT_SYNONYM_PROMPT.includes("{{synonyms}}"));
+  test("DEFAULT_SYNONYM_PROMPT contains {{rows}} placeholder", () => {
+    assert.ok(DEFAULT_SYNONYM_PROMPT.includes("{{rows}}"));
+  });
+
+  test("DEFAULT_SYNONYM_PROMPT_ROW contains {{originalWord}}, {{count}}, {{synonyms}} placeholders", () => {
+    assert.ok(DEFAULT_SYNONYM_PROMPT_ROW.includes("{{originalWord}}"));
+    assert.ok(DEFAULT_SYNONYM_PROMPT_ROW.includes("{{count}}"));
+    assert.ok(DEFAULT_SYNONYM_PROMPT_ROW.includes("{{synonyms}}"));
   });
 });
 
@@ -160,6 +171,26 @@ describe("settings — migrate", () => {
     assert.equal(result.synonyms.scanDepth, 9);
     assert.equal(result.synonyms.minOccurrences, 4);
   });
+
+  test("synonyms migration preserves legacy scanDepth and fills new fields with defaults", () => {
+    const deps = makeDeps();
+    deps.extension_settings.synonyms = {
+      enabled: true,
+      scanDepth: 4,
+      minOccurrences: 2,
+      customPrompt: "x",
+    };
+    resetDeps(deps);
+    const result = migrate(deps.extension_settings);
+    assert.equal(result.synonyms.scanDepth, 4);
+    assert.equal(result.synonyms.minOccurrences, 2);
+    assert.equal(result.synonyms.customPrompt, "x");
+    assert.equal(result.synonyms.topN, 3);
+    assert.equal(result.synonyms.outputMode, "with-suggestions");
+    assert.equal(result.synonyms.injectionDepth, 0);
+    assert.equal(result.synonyms.injectionEndRole, "system");
+    assert.equal(result.synonyms.customPromptRow, DEFAULT_SYNONYM_PROMPT_ROW);
+  });
 });
 
 describe("settings — loadSettings", () => {
@@ -203,6 +234,17 @@ describe("settings — loadSettings", () => {
     resetDeps(deps);
     const result = loadSettings();
     assert.deepEqual(result, defaultSettings);
+  });
+
+  test("loadSettings fresh-slot round-trip returns all new synonyms fields at defaults", () => {
+    const deps = makeDeps();
+    resetDeps(deps);
+    const result = loadSettings();
+    assert.equal(result.synonyms.topN, 3);
+    assert.equal(result.synonyms.outputMode, "with-suggestions");
+    assert.equal(result.synonyms.injectionDepth, 0);
+    assert.equal(result.synonyms.injectionEndRole, "system");
+    assert.equal(result.synonyms.customPromptRow, DEFAULT_SYNONYM_PROMPT_ROW);
   });
 });
 

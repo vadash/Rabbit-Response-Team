@@ -5,7 +5,9 @@ const NAMESPACE = "rabbitResponseTeam";
 
 export const DEFAULT_RANDOM_PROMPT = `[OOC NARRATIVE OVERDRIVE: You must naturally incorporate the following words into your response: {{words}}. Use each word at least once, weaving them seamlessly into the narrative flow. DO NOT bold, italicize, or add any visual indicators around these words - they must appear as normal text, indistinguishable from the rest of your writing.]`;
 
-export const DEFAULT_SYNONYM_PROMPT = `[OOC WORD FRESHNESS: The word "{{originalWord}}" has been used frequently. For variety and freshness, try using these synonyms instead: {{synonyms}}. Weave them naturally into your response.]`;
+export const DEFAULT_SYNONYM_PROMPT = `[OOC WORD FRESHNESS: The following words have been used frequently. Avoid reusing them; vary your vocabulary.\n{{rows}}]`;
+
+export const DEFAULT_SYNONYM_PROMPT_ROW = `- "{{originalWord}}" ({{count}}×) — try: {{synonyms}}`;
 
 export const defaultSettings = {
   schemaVersion: 1,
@@ -24,9 +26,14 @@ export const defaultSettings = {
   },
   synonyms: {
     enabled: false,
-    scanDepth: 6,
-    minOccurrences: 3,
+    scanDepth: 10,
+    minOccurrences: 5,
     customPrompt: DEFAULT_SYNONYM_PROMPT,
+    customPromptRow: DEFAULT_SYNONYM_PROMPT_ROW,
+    topN: 3,
+    outputMode: "with-suggestions",
+    injectionDepth: 0,
+    injectionEndRole: "system",
   },
   language: "auto",
 };

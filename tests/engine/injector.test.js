@@ -9,8 +9,13 @@ import assert from "node:assert/strict";
 import { buildInjections, __setDepsForTest } from "../../src/engine/injector.js";
 import {
   DEFAULT_RANDOM_PROMPT,
-  DEFAULT_SYNONYM_PROMPT,
 } from "../../src/settings.js";
+
+// The injector test fixture uses a literal single-word template (matching the
+// current renderer's {{originalWord}}/{{synonyms}} contract). DEFAULT_SYNONYM_PROMPT
+// moved to a {{rows}} outer wrapper in the synonym-overhaul design; the multi-word
+// rendering pipeline lands in a later task, at which point this fixture is rewritten.
+const SYN_PROMPT_LEGACY = `[OOC WORD FRESHNESS: "{{originalWord}}" used frequently. Try: {{synonyms}}.]`;
 
 function makeWordsStub(sampledWords) {
   return {
@@ -52,7 +57,7 @@ function makeSettings(overrides = {}) {
       enabled: false,
       scanDepth: 6,
       minOccurrences: 2,
-      customPrompt: DEFAULT_SYNONYM_PROMPT,
+      customPrompt: SYN_PROMPT_LEGACY,
       ...(overrides.synonyms ?? {}),
     },
     language: overrides.language ?? "en",
