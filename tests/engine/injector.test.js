@@ -9,13 +9,9 @@ import assert from "node:assert/strict";
 import { buildInjections, __setDepsForTest } from "../../src/engine/injector.js";
 import {
   DEFAULT_RANDOM_PROMPT,
+  DEFAULT_SYNONYM_PROMPT,
+  DEFAULT_SYNONYM_PROMPT_ROW,
 } from "../../src/settings.js";
-
-// The injector test fixture uses a literal single-word template (matching the
-// current renderer's {{originalWord}}/{{synonyms}} contract). DEFAULT_SYNONYM_PROMPT
-// moved to a {{rows}} outer wrapper in the synonym-overhaul design; the multi-word
-// rendering pipeline lands in a later task, at which point this fixture is rewritten.
-const SYN_PROMPT_LEGACY = `[OOC WORD FRESHNESS: "{{originalWord}}" used frequently. Try: {{synonyms}}.]`;
 
 function makeWordsStub(sampledWords) {
   return {
@@ -29,7 +25,10 @@ function makeSynonymsStub() {
   return {
     hasEntry: () => true,
     getSynonyms: (lang, word) => {
-      const map = { running: ["jogging", "sprinting", "dashing"] };
+      const map = {
+        running: ["jogging", "sprinting", "dashing"],
+        apple: ["fruit", "pome"],
+      };
       return map[word] ?? [];
     },
     getAssociations: () => [],
@@ -57,7 +56,12 @@ function makeSettings(overrides = {}) {
       enabled: false,
       scanDepth: 6,
       minOccurrences: 2,
-      customPrompt: SYN_PROMPT_LEGACY,
+      customPrompt: DEFAULT_SYNONYM_PROMPT,
+      customPromptRow: DEFAULT_SYNONYM_PROMPT_ROW,
+      topN: 3,
+      outputMode: "with-suggestions",
+      injectionDepth: 0,
+      injectionEndRole: "system",
       ...(overrides.synonyms ?? {}),
     },
     language: overrides.language ?? "en",
@@ -129,6 +133,157 @@ describe("injector — buildInjections", () => {
       !result.synonyms.content.includes("{{"),
       "no unresolved placeholders"
     );
+    assert.ok(
+      !result.synonyms.content.includes("{{rows}}"),
+      "{{rows}} placeholder resolved"
+    );
+  });
+
+  test("with-suggestions renders all top-N rows", async () => {
+    const settings = makeSettings({
+      randomWords: { enabled: false },
+      synonyms: {
+        enabled: true,
+        scanDepth: 6,
+        minOccurrences: 2,
+        topN: 3,
+        outputMode: "with-suggestions",
+      },
+    });
+    const chatTexts = ["running running running apple apple apple"];
+    const result = await buildInjections(settings, "en", "hi", chatTexts);
+    assert.notEqual(result.synonyms, null);
+    assert.ok(result.synonyms.content.includes("running"), "running row");
+    assert.ok(result.synonyms.content.includes("apple"), "apple row");
+    assert.ok(result.synonyms.content.includes("jogging"), "running synonyms");
+    assert.ok(result.synonyms.content.includes("fruit"), "apple synonyms");
+    assert.ok(
+      !result.synonyms.content.includes("{{rows}}"),
+      "{{rows}} resolved"
+    );
+    assert.ok(
+      !result.synonyms.content.includes("{{"),
+      "no unresolved placeholders"
+    );
+  });
+
+  test("avoid-only renders rows without synonyms", async () => {
+    const settings = makeSettings({
+      randomWords: { enabled: false },
+      synonyms: {
+        enabled: true,
+        scanDepth: 6,
+        minOccurrences: 2,
+        topN: 3,
+        outputMode: "avoid-only",
+      },
+    });
+    const chatTexts = ["running running running apple apple apple"];
+    const result = await buildInjections(settings, "en", "hi", chatTexts);
+    assert.notEqual(result.synonyms, null);
+    assert.ok(result.synonyms.content.includes("running"), "running row");
+    assert.ok(result.synonyms.content.includes("apple"), "apple row");
+    assert.ok(
+      !result.synonyms.content.includes("jogging"),
+      "no synonyms leaked in avoid-only"
+    );
+    assert.ok(
+      !result.synonyms.content.includes("fruit"),
+      "no synonyms leaked in avoid-only"
+    );
+    assert.ok(
+      !/try:\s*$/.test(result.synonyms.content),
+      "trailing 'try:' separator stripped"
+    );
+    assert.ok(
+      !result.synonyms.content.includes("{{"),
+      "no unresolved placeholders"
+    );
+  });
+
+  test("empty scan → synonyms slot null", async () => {
+    const settings = makeSettings({
+      randomWords: { enabled: false },
+      synonyms: { enabled: true, scanDepth: 6, minOccurrences: 5 },
+    });
+    const chatTexts = ["running running"];
+    const result = await buildInjections(settings, "en", "hi", chatTexts);
+    assert.equal(result.synonyms, null);
+  });
+
+  test("synonyms depth is independent of randomWords depth", async () => {
+    const settings = makeSettings({
+      randomWords: { enabled: false, injectionDepth: 0 },
+      synonyms: {
+        enabled: true,
+        scanDepth: 6,
+        minOccurrences: 2,
+        injectionDepth: 4,
+      },
+    });
+    const chatTexts = ["running running running"];
+    const result = await buildInjections(settings, "en", "hi", chatTexts);
+    assert.notEqual(result.synonyms, null);
+    assert.equal(result.synonyms.depth, 4);
+  });
+
+  test("synonyms role is independent of randomWords role", async () => {
+    const settings = makeSettings({
+      randomWords: { enabled: false, injectionEndRole: "system" },
+      synonyms: {
+        enabled: true,
+        scanDepth: 6,
+        minOccurrences: 2,
+        injectionEndRole: "user",
+      },
+    });
+    const chatTexts = ["running running running"];
+    const result = await buildInjections(settings, "en", "hi", chatTexts);
+    assert.notEqual(result.synonyms, null);
+    assert.equal(result.synonyms.role, 1);
+  });
+
+  test("broken '{{' in row template → synonyms slot null AND warn called", async () => {
+    const settings = makeSettings({
+      randomWords: { enabled: false },
+      synonyms: {
+        enabled: true,
+        scanDepth: 6,
+        minOccurrences: 2,
+        customPromptRow: "broken {{originalWord",
+      },
+    });
+    const chatTexts = ["running running running"];
+    const result = await buildInjections(settings, "en", "hi", chatTexts);
+    assert.equal(result.synonyms, null);
+    assert.ok(warnCalls.length > 0, "warn called for broken row template");
+  });
+
+  test("broken '{{' in outer template → synonyms slot null AND warn called", async () => {
+    const settings = makeSettings({
+      randomWords: { enabled: false },
+      synonyms: {
+        enabled: true,
+        scanDepth: 6,
+        minOccurrences: 2,
+        customPrompt: "broken {{rows",
+      },
+    });
+    const chatTexts = ["running running running"];
+    const result = await buildInjections(settings, "en", "hi", chatTexts);
+    assert.equal(result.synonyms, null);
+    assert.ok(warnCalls.length > 0, "warn called for broken outer template");
+  });
+
+  test("single overused word still produces a non-null slot", async () => {
+    const settings = makeSettings({
+      randomWords: { enabled: false },
+      synonyms: { enabled: true, scanDepth: 6, minOccurrences: 2 },
+    });
+    const chatTexts = ["running running"];
+    const result = await buildInjections(settings, "en", "hi", chatTexts);
+    assert.notEqual(result.synonyms, null);
+    assert.ok(result.synonyms.content.includes("running"));
   });
 
   test("depth=N passes through to result.random.depth", async () => {

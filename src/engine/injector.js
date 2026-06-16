@@ -102,13 +102,30 @@ export async function buildInjections(settings, lang, userMessage, chatTexts) {
         synonyms: deps.synonyms,
       });
       if (Array.isArray(overused) && overused.length > 0) {
-        const target = overused[0];
-        const formatted = target.suggestions.map((w) => `"${w}"`).join(", ");
-        const rendered = renderTemplate(syn.customPrompt, {
-          originalWord: target.word,
-          synonyms: formatted,
+        const synDepth = syn.injectionDepth ?? 0;
+        const synRole = mapRole(syn.injectionEndRole ?? "system");
+        const mode = syn.outputMode ?? "with-suggestions";
+        const rowTemplate = syn.customPromptRow ?? "";
+        const rows = overused.map((entry) => {
+          const synonyms =
+            mode === "avoid-only"
+              ? ""
+              : entry.suggestions.map((w) => `"${w}"`).join(", ");
+          let rendered = renderTemplate(rowTemplate, {
+            originalWord: entry.word,
+            count: String(entry.count),
+            synonyms,
+          });
+          if (mode === "avoid-only") {
+            rendered = rendered.replace(/\s*[—–-]\s*try:\s*$/i, "");
+          }
+          return rendered;
         });
-        synonymsSlot = { content: rendered, depth, role };
+        const joinedRows = rows.join("\n");
+        const rendered = renderTemplate(syn.customPrompt, {
+          rows: joinedRows,
+        });
+        synonymsSlot = { content: rendered, depth: synDepth, role: synRole };
       }
     } catch (err) {
       deps.warn("Rabbit Response Team: synonyms slot failed:", err);
