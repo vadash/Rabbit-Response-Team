@@ -9,6 +9,8 @@ import {
   sampleWithoutReplacement,
   shuffleInPlace,
 } from "../util/random.js";
+import { extractTokens } from "../util/tokenize.js";
+import { normalize } from "../util/normalize.js";
 
 // Default to the real data modules. Tests pass stubs via opts.
 let defaultWordsModule = null;
@@ -50,11 +52,8 @@ function baseSampleOpts(settings, history) {
 
 function tokenize(text, lang) {
   if (typeof text !== "string" || text.length === 0) return [];
-  const lower = text.toLowerCase();
-  // Split on anything that isn't a letter (Latin or Cyrillic).
-  const tokens = lower.split(/[^a-zа-яё]+/i).filter(Boolean);
   const stop = lang === "ru" ? STOPWORDS_RU : STOPWORDS_EN;
-  return tokens.filter((t) => !stop.has(t));
+  return extractTokens(text).filter((t) => !stop.has(t));
 }
 
 function runRandom(words, lang, settings, history) {
@@ -139,9 +138,12 @@ function runContextual(words, synonyms, lang, settings, userMessage, history, wa
   ranked.sort((a, b) => a.rank - b.rank);
 
   // Walk by ascending rank (most frequent first); pick the first with an entry.
+  // Lookups against the synonyms data go through normalize() because the
+  // build pipeline emits stem keys (e.g. "appl"); inflected user tokens like
+  // "apples" / "госпожой" must collapse to those stems to match.
   let chosen = null;
   for (const c of ranked) {
-    if (synonyms.hasEntry(lang, c.word)) {
+    if (synonyms.hasEntry(lang, normalize(c.word, lang))) {
       chosen = c.word;
       break;
     }
@@ -156,7 +158,7 @@ function runContextual(words, synonyms, lang, settings, userMessage, history, wa
 
   const blacklist = new Set(Array.isArray(rw.blacklist) ? rw.blacklist : []);
   const historySet = history ?? new Set();
-  const assocAll = synonyms.getAssociations(lang, chosen);
+  const assocAll = synonyms.getAssociations(lang, normalize(chosen, lang));
   const eligible = assocAll.filter(
     (w) => !blacklist.has(w) && !historySet.has(w)
   );

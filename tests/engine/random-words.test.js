@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { generateWords } from "../../src/engine/random-words.js";
+import { normalize } from "../../src/util/normalize.js";
 
 const enWords = JSON.parse(
   readFileSync(
@@ -96,6 +97,20 @@ function makeSynonymsStub(dataByLang) {
   };
 }
 
+// Re-key a headword-keyed synonyms map under each headword's stem, so stubs
+// mirror the form the build pipeline now emits and the contextual-mode
+// normalizing lookup can reach them. Values (s/a arrays) stay as headwords.
+function stemKeyedSynonymsStub(dataByLang) {
+  const out = {};
+  for (const [lang, entries] of Object.entries(dataByLang)) {
+    out[lang] = {};
+    for (const [headword, entry] of Object.entries(entries)) {
+      out[lang][normalize(headword, lang)] = entry;
+    }
+  }
+  return makeSynonymsStub(out);
+}
+
 function baseSettings(patch = {}) {
   return {
     schemaVersion: 1,
@@ -126,7 +141,7 @@ function baseSettings(patch = {}) {
 function defaultDeps() {
   return {
     words: makeWordsStub({ en: enWords, ru: ruWords }),
-    synonyms: makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms }),
+    synonyms: stemKeyedSynonymsStub({ en: enSynonyms, ru: ruSynonyms }),
     warn: () => {},
   };
 }
@@ -395,5 +410,153 @@ describe("random-words — robustness", () => {
     const assoc = new Set(["сад", "дерево"]);
     assert.ok(out.length > 0);
     for (const w of out) assert.ok(assoc.has(w));
+  });
+});
+
+describe("random-words — contextual mode with inflected user tokens", () => {
+  // Per Task 8: user messages contain inflected forms (e.g. "apples",
+  // "госпожой"); runContextual must normalize candidate tokens before the
+  // hasEntry / getAssociations lookup so they resolve to the stem keys the
+  // build pipeline emits.
+  test("EN inflected user token resolves to Porter-stemmed fixture key", () => {
+    // Words stub: accept "apples" as a known keyword (bank rank 100) so it
+    // survives the getWordMeta ranking step. Synonyms stub carries the
+    // build-emitted stem key ("appl") with associations to return.
+    const words = {
+      getWordMeta: (lang, w) => (w === "apples" ? { pos: "n", rank: 100 } : null),
+      sampleWords: () => [],
+    };
+    const stem = normalize("apple", "en");
+    assert.equal(stem, "appl", "sanity: Porter stem of 'apple' is 'appl'");
+    const synonyms = makeSynonymsStub({
+      en: { [stem]: { s: ["fruit"], a: ["orchard", "tree", "harvest"] } },
+    });
+    const out = generateWords(
+      "en",
+      baseSettings({ mode: "contextual", wordCount: 3 }),
+      "I picked apples today",
+      { words, synonyms, warn: () => {} }
+    );
+    assert.ok(out.length > 0, "must not fall back to empty/random");
+    const assoc = new Set(["orchard", "tree", "harvest"]);
+    for (const w of out) assert.ok(assoc.has(w), `${w} should be an apple association`);
+  });
+
+  test("RU inflected user token resolves to Snowball-stemmed fixture key", () => {
+    // "госпожой" → normalize → "госпож" (fixed-point stem, design §13.3).
+    const words = {
+      getWordMeta: (lang, w) =>
+        w === "госпожой" ? { pos: "n", rank: 100 } : null,
+      sampleWords: () => [],
+    };
+    const stem = normalize("госпожа", "ru");
+    assert.equal(stem, "госпож", "sanity: Snowball stem of 'госпожа' is 'госпож'");
+    assert.equal(
+      normalize("госпожой", "ru"),
+      stem,
+      "sanity: inflected form collapses to same stem"
+    );
+    const synonyms = makeSynonymsStub({
+      ru: { [stem]: { s: ["леди"], a: ["дама", "повелительница"] } },
+    });
+    const out = generateWords(
+      "ru",
+      baseSettings({ mode: "contextual", wordCount: 2 }),
+      "я видел госпожой сегодня",
+      { words, synonyms, warn: () => {} }
+    );
+    assert.ok(out.length > 0, "must not fall back to empty/random");
+    const assoc = new Set(["дама", "повелительница"]);
+    for (const w of out) assert.ok(assoc.has(w));
+  });
+
+  test("ё→е: RU user token 'ёлка' matches stem key computed from 'елка'", () => {
+    const expectedKey = normalize("елка", "ru");
+    assert.equal(normalize("ёлка", "ru"), expectedKey, "sanity: ё and е collapse");
+    assert.equal(normalize("ёлку", "ru"), expectedKey, "sanity: inflected 'ёлку' collapses to same stem");
+    assert.doesNotMatch(expectedKey, /ё/, "sanity: stem key has no ё");
+    const words = {
+      getWordMeta: (lang, w) => (w === "ёлку" ? { pos: "n", rank: 50 } : null),
+      sampleWords: () => [],
+    };
+    const synonyms = makeSynonymsStub({
+      ru: { [expectedKey]: { a: ["хвоя", "ель"] } },
+    });
+    const out = generateWords(
+      "ru",
+      baseSettings({ mode: "contextual", wordCount: 2 }),
+      "срубили ёлку вчера",
+      { words, synonyms, warn: () => {} }
+    );
+    assert.ok(out.length > 0);
+    const assoc = new Set(["хвоя", "ель"]);
+    for (const w of out) assert.ok(assoc.has(w));
+  });
+
+  test("headword-keyed (un-stemmed) synonyms data does NOT match inflected token", () => {
+    // Negative case: if a stub's key is a raw headword instead of a stem,
+    // the normalizing lookup must not reach it.
+    const words = {
+      getWordMeta: (lang, w) => (w === "apples" ? { pos: "n", rank: 100 } : null),
+      sampleWords: () => [],
+    };
+    const synonyms = makeSynonymsStub({
+      en: { apple: { a: ["orchard"] } }, // headword key, not stem
+    });
+    const warns = [];
+    const out = generateWords(
+      "en",
+      baseSettings({ mode: "contextual", wordCount: 3 }),
+      "I picked apples today",
+      { words, synonyms, warn: (m) => warns.push(m) }
+    );
+    // No stem-keyed match → falls back to random (sampleWords returns [] here
+    // → empty result) and warns once.
+    assert.equal(warns.length, 1);
+    assert.deepEqual(out, []);
+  });
+});
+
+describe("random-words — runRandom / runDoublePass do not normalize picks", () => {
+  // Regression (Task 8 step 2): only runContextual normalizes. The other two
+  // modes sample from the word bank, which keeps headword form, so their
+  // output must be raw headwords from the bank — never stems.
+  test("runRandom returns bank headwords verbatim (no stem transformation)", () => {
+    const deps = defaultDeps();
+    const out = generateWords(
+      "en",
+      baseSettings({ mode: "random", wordCount: 5 }),
+      "",
+      { ...deps }
+    );
+    const bank = new Set(enWords.map((e) => e[0]));
+    for (const w of out) {
+      assert.ok(bank.has(w), `${w} must be a bank headword, not a stem`);
+    }
+  });
+
+  test("runDoublePass samples raw bank headwords as anchors (no stem transformation)", () => {
+    // Dense stub keyed by headword — double-pass must call hasEntry with the
+    // raw headword it sampled, NOT a normalized stem. If normalization leaked
+    // into this lookup, the dense headword keys would never match and the
+    // anchor loop would fall back to plain random (still 4 items, but the
+    // "anchor has entry" property tested elsewhere would silently break).
+    const deps = defaultDeps();
+    const dense = {};
+    for (const e of enWords) dense[e[0]] = { s: ["syn-" + e[0]], a: ["assoc-" + e[0]] };
+    const denseSyn = makeSynonymsStub({ en: dense, ru: {} });
+    const out = generateWords(
+      "en",
+      baseSettings({ mode: "double-pass", wordCount: 4 }),
+      "",
+      { ...deps, synonyms: denseSyn }
+    );
+    assert.equal(out.length, 4);
+    const anchor = out[0];
+    const bank = new Set(enWords.map((e) => e[0]));
+    assert.ok(bank.has(anchor), `anchor ${anchor} must be a bank headword, not a stem`);
+    // And the anchor must have a headword-keyed entry in the dense stub —
+    // proves hasEntry received the raw headword, not a stem.
+    assert.ok(denseSyn.hasEntry("en", anchor));
   });
 });
