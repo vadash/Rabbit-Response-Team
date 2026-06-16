@@ -5,7 +5,7 @@
   "type": "module",
   "description": "SillyTavern extension — offline random-word injection to disrupt LLM patterns",
   "scripts": {
-    "build": "node scripts/build_assets.js && node scripts/verify_assets.js",
+    "build": "node scripts/vendor-stemmers.js && node scripts/build_assets.js && node scripts/verify_assets.js",
     "verify": "node scripts/verify_assets.js",
     "test": "node --test \"tests/**/*.test.js\"",
     "repomix": "npm run repomix:main && npm run repomix:prep",
@@ -13,7 +13,9 @@
     "repomix:prep": "repomix --config repomix-prep.config.json --output repomix-output-prep.md"
   },
   "devDependencies": {
+    "porter-stemmer": "^0.9.1",
     "repomix": "^1.14.1",
+    "snowball-stemmer.jsx": "^0.2.3",
     "wordnet-db": "^3.1.11"
   }
 }
