@@ -36,6 +36,7 @@ import { generateWords } from './engine/random-words.js';
 import {
   buildInjections,
   mapRole,
+  buildSynonymsPreview,
   __setDepsForTest as setInjectorDeps,
 } from './engine/injector.js';
 import {
@@ -261,6 +262,12 @@ function wireDeps() {
       // sample reflects the user's actual word bank.
       await ensureAssetsForLanguage(lang);
       return generateWords(lang, settings, userMessage);
+    },
+    buildSynonymsPreview: async (settings, lang, chatTexts) => {
+      // Lazy asset load so the preview reflects the bundled synonym map
+      // without fetching at boot.
+      await ensureAssetsForLanguage(lang);
+      return buildSynonymsPreview(settings, lang, chatTexts);
     },
     getContext: () => SillyTavern.getContext(),
     warn: (...args) => console.warn(...args),

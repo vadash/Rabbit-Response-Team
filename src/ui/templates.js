@@ -179,7 +179,12 @@ export function synonymsSection(settings) {
   const enabled = syn.enabled ? "checked" : "";
   const scanDepth = syn.scanDepth ?? 6;
   const minOccurrences = syn.minOccurrences ?? 3;
+  const topN = syn.topN ?? 3;
+  const outputMode = syn.outputMode === "avoid-only" ? "avoid-only" : "with-suggestions";
+  const injectionDepth = syn.injectionDepth ?? 0;
+  const injectionEndRole = syn.injectionEndRole ?? "system";
   const customPrompt = escapeTextarea(syn.customPrompt ?? "");
+  const customPromptRow = escapeTextarea(syn.customPromptRow ?? "");
 
   return `
     <div id="rabbit-tab-synonyms" class="rabbit-tab-content" style="display: none;">
@@ -208,6 +213,25 @@ export function synonymsSection(settings) {
         <small>Word must appear this many times to trigger a synonym suggestion.</small>
       </div>
 
+      <div class="rabbit-setting-row">
+        <label for="rabbit_top_n">Top N (overused words to surface):</label>
+        <input type="number" id="rabbit_top_n" name="rabbit_top_n"
+               min="1" max="8" step="1" value="${topN}" />
+        <small>Cap on how many overused words the prompt lists, ranked by frequency.</small>
+      </div>
+
+      <div class="rabbit-setting-row">
+        <label>Output Mode:</label>
+        <fieldset class="rabbit-pos-fieldset">
+          <label><input type="radio" name="rabbit_synonym_output_mode" value="avoid-only" ${outputMode === "avoid-only" ? "checked" : ""} /> Avoid Only (just list words to avoid)</label>
+          <label><input type="radio" name="rabbit_synonym_output_mode" value="with-suggestions" ${outputMode === "with-suggestions" ? "checked" : ""} /> With Suggestions (include synonyms)</label>
+        </fieldset>
+      </div>
+
+      <div class="rabbit-setting-row">
+        <button id="rabbit_test_synonyms" type="button" class="rabbit-test-button">🔎 Test Synonyms</button>
+      </div>
+
       <div class="rabbit-advanced-header" data-target="#rabbit-synonym-advanced-body" aria-expanded="false">
         <i class="fa-solid fa-cog"></i>
         <span>Advanced Settings</span>
@@ -218,12 +242,37 @@ export function synonymsSection(settings) {
         <div class="rabbit-setting-row">
           <label for="rabbit_synonym_prompt">Custom Prompt Template:</label>
           <textarea id="rabbit_synonym_prompt" name="rabbit_synonym_prompt" rows="4">${customPrompt}</textarea>
-          <small>Use <code>{{originalWord}}</code> and <code>{{synonyms}}</code> macros.</small>
+          <small>Use <code>{{rows}}</code> to insert the rendered per-word rows.</small>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label for="rabbit_synonym_prompt_row">Row Template (one per overused word):</label>
+          <textarea id="rabbit_synonym_prompt_row" name="rabbit_synonym_prompt_row" rows="3">${customPromptRow}</textarea>
+          <small>Use <code>{{originalWord}}</code>, <code>{{count}}</code>, and <code>{{synonyms}}</code> macros.</small>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label for="rabbit_synonym_injection_depth">Injection Depth:</label>
+          <input type="number" id="rabbit_synonym_injection_depth" name="rabbit_synonym_injection_depth"
+                 min="0" max="99" value="${injectionDepth}" />
+          <small>0 = just before assistant prefill, higher = further up the prompt.</small>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label for="rabbit_synonym_injection_end_role">Injection Role:</label>
+          <select id="rabbit_synonym_injection_end_role" name="rabbit_synonym_injection_end_role">
+            <option value="system" ${injectionEndRole === "system" ? "selected" : ""}>System</option>
+            <option value="user" ${injectionEndRole === "user" ? "selected" : ""}>User</option>
+            <option value="assistant" ${injectionEndRole === "assistant" ? "selected" : ""}>Assistant</option>
+          </select>
         </div>
 
         <div class="rabbit-setting-row">
           <button id="rabbit_synonym_reset_prompt" type="button" class="rabbit-reset-button">
-            <i class="fa-solid fa-rotate-left"></i> Reset to Default Template
+            <i class="fa-solid fa-rotate-left"></i> Reset Prompt Template
+          </button>
+          <button id="rabbit_synonym_reset_prompt_row" type="button" class="rabbit-reset-button">
+            <i class="fa-solid fa-rotate-left"></i> Reset Row Template
           </button>
         </div>
       </div>

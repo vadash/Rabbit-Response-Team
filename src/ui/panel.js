@@ -9,6 +9,7 @@ import {
   defaultSettings,
   DEFAULT_RANDOM_PROMPT,
   DEFAULT_SYNONYM_PROMPT,
+  DEFAULT_SYNONYM_PROMPT_ROW,
   loadSettings,
   saveSettings,
 } from "../settings.js";
@@ -17,9 +18,10 @@ import { resolveLanguage } from "../data/language.js";
 let deps = {
   $: null,
   toastr: null,
-  // Per design §4 dependency rule, UI must not import engine. The Test button
-  // needs generateWords, so it is injected from src/index.js at boot.
+  // Per design §4 dependency rule, UI must not import engine. The Test buttons
+  // need engine helpers, so they are injected from src/index.js at boot.
   generateWords: null,
+  buildSynonymsPreview: null,
   getContext: () => ({ chat: [], lastMessageText: () => "" }),
   warn: (...args) => {
     if (typeof console !== "undefined" && console.warn) console.warn(...args);
@@ -73,7 +75,12 @@ function readSynonymsPatch($) {
     enabled: $("#rabbit_synonym_enabled").is(":checked"),
     scanDepth: parseInt($("#rabbit_scan_depth").val(), 10),
     minOccurrences: parseInt($("#rabbit_min_occurrences").val(), 10),
+    topN: parseInt($("#rabbit_top_n").val(), 10),
+    outputMode: $('input[name="rabbit_synonym_output_mode"]:checked').val() || "with-suggestions",
     customPrompt: $("#rabbit_synonym_prompt").val(),
+    customPromptRow: $("#rabbit_synonym_prompt_row").val(),
+    injectionDepth: parseInt($("#rabbit_synonym_injection_depth").val(), 10),
+    injectionEndRole: $("#rabbit_synonym_injection_end_role").val(),
   };
 }
 
@@ -177,7 +184,12 @@ export async function bindEvents(container, onChange) {
     "#rabbit_synonym_enabled",
     "#rabbit_scan_depth",
     "#rabbit_min_occurrences",
+    "#rabbit_top_n",
+    'input[name="rabbit_synonym_output_mode"]',
     "#rabbit_synonym_prompt",
+    "#rabbit_synonym_prompt_row",
+    "#rabbit_synonym_injection_depth",
+    "#rabbit_synonym_injection_end_role",
   ];
   synInputs.forEach((sel) => {
     root.on("input change", sel, () => persist({ synonyms: readSynonymsPatch($) }));
@@ -199,6 +211,60 @@ export async function bindEvents(container, onChange) {
     $("#rabbit_synonym_prompt").val(DEFAULT_SYNONYM_PROMPT);
     persist({ synonyms: { ...readSynonymsPatch($), customPrompt: DEFAULT_SYNONYM_PROMPT } });
     if (deps.toastr) deps.toastr.success("Prompt template reset to default", "Rabbit Response Team");
+  });
+
+  root.on("click", "#rabbit_synonym_reset_prompt_row", () => {
+    $("#rabbit_synonym_prompt_row").val(DEFAULT_SYNONYM_PROMPT_ROW);
+    persist({ synonyms: { ...readSynonymsPatch($), customPromptRow: DEFAULT_SYNONYM_PROMPT_ROW } });
+    if (deps.toastr) deps.toastr.success("Row template reset to default", "Rabbit Response Team");
+  });
+
+  // Test Synonyms button — scans recent assistant messages and surfaces the
+  // rendered synonym prompt (or a "no overused words" notice).
+  root.on("click", "#rabbit_test_synonyms", async () => {
+    try {
+      const settings = loadSettings();
+      const ctx = deps.getContext?.() ?? { chat: [] };
+      const lastUser =
+        typeof ctx.lastMessageText === "function"
+          ? ctx.lastMessageText()
+          : (ctx.chat?.slice().reverse().find((m) => m?.is_user)?.mes ?? "");
+      const lang = resolveLanguage(settings.language ?? "auto", lastUser ?? "");
+      const chatTexts = (ctx.chat ?? [])
+        .filter((m) => m && m.is_user === false)
+        .map((m) => m?.mes ?? m?.content ?? "");
+      if (deps.toastr) {
+        deps.toastr.info(
+          `Scanning last ${settings.synonyms.scanDepth} assistant messages…`,
+          "Rabbit Response Team",
+        );
+      }
+      if (typeof deps.buildSynonymsPreview !== "function") {
+        if (deps.toastr) {
+          deps.toastr.error("Engine not wired yet — see src/index.js.", "Rabbit Response Team");
+        }
+        return;
+      }
+      const result = await deps.buildSynonymsPreview(settings, lang, chatTexts);
+      if (result && result.length > 0) {
+        if (deps.toastr) {
+          deps.toastr.success(result, "Rabbit Response Team", {
+            timeOut: 10000,
+            extendedTimeOut: 5000,
+          });
+        }
+      } else if (deps.toastr) {
+        deps.toastr.info(
+          `No overused words found in the last ${settings.synonyms.scanDepth} assistant messages.`,
+          "Rabbit Response Team",
+        );
+      }
+    } catch (err) {
+      deps.warn("Rabbit Response Team: test synonyms button failed:", err);
+      if (deps.toastr) {
+        deps.toastr.error("Test failed — check console.", "Rabbit Response Team");
+      }
+    }
   });
 
   // Test Random Words button — wired to the offline engine.
