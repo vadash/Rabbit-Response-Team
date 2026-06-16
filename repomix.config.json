@@ -20,7 +20,8 @@
       "scripts/raw/",
       "LICENSE",
       "docs/",
-      "scripts/prep/"
+      "scripts/prep/",
+      "src/util/"
     ]
   }
 }
