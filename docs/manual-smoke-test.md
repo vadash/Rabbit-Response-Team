@@ -91,10 +91,26 @@ Per `AGENTS.md`, the ST-global wiring layer is not covered by unit tests — pur
 1. Click the **Test Random Words** button in the panel.
 2. **Expected:** a `toastr` toast appears with sampled words. No `setExtensionPrompt` write fires from the button (it calls `generateWords` directly, not the generation handler).
 
+## Test 8 — Synonym overhaul (assistant-only scan, top-N, two modes, Test button)
+
+This test covers the synonym redesign shipped under `docs/designs/2026-06-16-synonym-overhaul.md`.
+
+1. **Chat setup:** open a SillyTavern chat with ≥10 assistant messages (the calibration chat or similar). Skim the chat and identify a word that appears many times in **user** messages — you'll use it as a negative control in step 6.
+2. **Defaults check:** in the Rabbit Response Team panel, toggle **Synonyms → Enabled** on and leave the defaults in place — **Scan Depth** `10`, **Min Occurrences** `5`, **Top N** `3`, **Output Mode** `with-suggestions`.
+3. **Test Synonyms button:** click the **Test Synonyms** button.
+   - **Expected:** a `toastr` toast appears showing 1–3 overused words, each rendered as a row with its synonym suggestions (the `×` separator and ` — try:` suffix present in `with-suggestions` mode).
+4. **Output mode toggle — avoid-only:** switch **Output Mode** to `avoid-only`. Click **Test Synonyms** again.
+   - **Expected:** the toast still lists the overused words, but **no synonym suggestions** appear and **no ` — try:` trailing separator** is rendered — just the avoidance instruction per word.
+5. **Rendered slot inspection:** with Synonyms still enabled, send any chat message that triggers a Generate.
+   - **Expected:** in the browser DevTools console, SillyTavern's prompt inspector (or the cyan debugger view) shows the `rabbitResponseTeam_synonym` slot rendered at its configured depth/role (defaults: depth `0`, role `system`).
+6. **Assistant-only scan (negative control):** compare the toast from step 3 against the chat. The word you identified in step 1 (heavily repeated by the **user**) must **NOT** appear in the toast — only assistant-side repetitions are flagged. If it does appear, the assistant-only filter is broken.
+7. **Independent depth/role:** set **Synonyms → Injection Depth** to `4` and **Random Words → Injection Depth** to `0`. Trigger another Generate.
+   - **Expected:** the synonym slot lands at depth `4` (visible via SillyTavern's prompt inspector or devtools) while the random-words slot remains at depth `0`. The two slots' depth/role settings must be fully independent — changing one must not move the other.
+
 ---
 
 ## Pass Criteria
 
-- All seven tests produce the expected log lines and prompt-debugger state.
+- All eight tests produce the expected log lines and prompt-debugger state.
 - No uncaught exceptions appear in the console (only intentional `warn` calls from the fail-safe path).
 - The model's generation is never blocked or interrupted by this extension.
