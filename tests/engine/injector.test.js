@@ -29,9 +29,12 @@ function makeSynonymsStub() {
   return {
     hasEntry: () => true,
     getSynonyms: (lang, word) => {
+      // Keys are stems (Porter output) — the scanner now normalizes the
+      // lookup token before calling getSynonyms. "running" → "run",
+      // "apple" → "appl".
       const map = {
-        running: ["jogging", "sprinting", "dashing"],
-        apple: ["fruit", "pome"],
+        run: ["jogging", "sprinting", "dashing"],
+        appl: ["fruit", "pome"],
       };
       return map[word] ?? [];
     },

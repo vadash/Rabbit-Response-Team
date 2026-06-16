@@ -4,18 +4,11 @@
 // opts so tests can stub it without touching real assets.
 
 import { STOPWORDS_EN, STOPWORDS_RU } from "../data/language.js";
+import { extractTokens } from "../util/tokenize.js";
+import { normalize } from "../util/normalize.js";
 
 const SUGGESTION_CAP = 2;
 const DEFAULT_TOP_N = 3;
-
-// Tokenize a message into lowercase word tokens. Splits on anything that is
-// not a letter (Latin or Cyrillic). Single-character tokens and pure-emoji
-// messages naturally drop out — no script characters means no tokens.
-function tokenize(text) {
-  if (typeof text !== "string") return [];
-  const matches = text.toLowerCase().match(/[a-zà-ɏ]+|[а-яё]+/gi);
-  return matches ?? [];
-}
 
 function stopwordSetFor(lang) {
   return lang === "ru" ? STOPWORDS_RU : STOPWORDS_EN;
@@ -51,7 +44,7 @@ export function findOverusedWords(chatHistory, lang, settings, opts = {}) {
 
   const counts = new Map();
   for (const message of window_) {
-    for (const token of tokenize(message)) {
+    for (const token of extractTokens(message)) {
       if (stopwords.has(token)) continue;
       counts.set(token, (counts.get(token) ?? 0) + 1);
     }
@@ -60,8 +53,9 @@ export function findOverusedWords(chatHistory, lang, settings, opts = {}) {
   const result = [];
   for (const [word, count] of counts) {
     if (count < minOccurrences) continue;
-    if (!hasEntry(lang, word)) continue;
-    const allSuggestions = getSynonyms(lang, word);
+    const key = normalize(word, lang);
+    if (!hasEntry(lang, key)) continue;
+    const allSuggestions = getSynonyms(lang, key);
     if (allSuggestions.length === 0) continue;
     const suggestions = allSuggestions.slice(0, SUGGESTION_CAP);
     result.push({ word, count, suggestions });

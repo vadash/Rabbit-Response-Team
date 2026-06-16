@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { findOverusedWords } from "../../src/engine/synonym-scanner.js";
+import { normalize } from "../../src/util/normalize.js";
 
 const enSynonyms = JSON.parse(
   readFileSync(
@@ -37,6 +38,18 @@ function makeSynonymsStub(dataByLang) {
       Object.prototype.hasOwnProperty.call(dataByLang[lang] ?? {}, word),
     getSynonyms: (lang, word) => (dataByLang[lang]?.[word]?.s) ?? [],
   };
+}
+
+// Build a stub whose keys are stems (the form the build pipeline now emits),
+// computed from a headword-keyed source via normalize(). Used by scanner
+// tests that need to exercise the normalize-then-lookup path against
+// entries expressed in readable headword form.
+function stemKeyedStub(lang, headwordEntries) {
+  const data = {};
+  for (const [headword, entry] of Object.entries(headwordEntries)) {
+    data[normalize(headword, lang)] = entry;
+  }
+  return makeSynonymsStub({ [lang]: data });
 }
 
 function baseSettings(scanDepth = 6, minOccurrences = 2) {
@@ -69,7 +82,7 @@ describe("synonym-scanner — findOverusedWords", () => {
       "running running running",
       "apple once",
     ];
-    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const synonyms = stemKeyedStub("en", { running: enSynonyms.running });
     const result = findOverusedWords(history, "en", baseSettings(2, 2), { synonyms });
     const words = result.map((r) => r.word).sort();
     assert.deepEqual(words, ["running"]);
@@ -80,19 +93,19 @@ describe("synonym-scanner — findOverusedWords", () => {
     const history = [
       "the the the the the running running running",
     ];
-    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const synonyms = stemKeyedStub("en", { running: enSynonyms.running });
     const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
     const words = result.map((r) => r.word);
     assert.deepEqual(words, ["running"]);
   });
 
   test("excludes Russian stopwords from frequency counts", () => {
-    // "и" is a RU stopword, appears many times. "яблоко" is not in the fixture
-    // but "бег" — let's use a word that exists in mini-ru-synonyms.
+    // "и" is a RU stopword, appears many times. "бег" — a word that exists
+    // in mini-ru-synonyms and is its own stem.
     const history = [
       "и и и и и бег бег бег",
     ];
-    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const synonyms = stemKeyedStub("ru", { бег: ruSynonyms.бег });
     const result = findOverusedWords(history, "ru", baseSettings(6, 2), { synonyms });
     // Verify "и" was excluded — only "бег" should appear (if it has an entry).
     const words = result.map((r) => r.word);
@@ -106,7 +119,7 @@ describe("synonym-scanner — findOverusedWords", () => {
     const history = [
       "running running running ghost ghost ghost",
     ];
-    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const synonyms = stemKeyedStub("en", { running: enSynonyms.running });
     const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
     const words = result.map((r) => r.word);
     assert.deepEqual(words, ["running"]);
@@ -117,7 +130,7 @@ describe("synonym-scanner — findOverusedWords", () => {
     const history = [
       "running running",
     ];
-    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const synonyms = stemKeyedStub("en", { running: enSynonyms.running });
     const result = findOverusedWords(history, "en", baseSettings(6, 3), { synonyms });
     assert.deepEqual(result, []);
   });
@@ -126,7 +139,7 @@ describe("synonym-scanner — findOverusedWords", () => {
     const history = [
       "running running running",
     ];
-    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const synonyms = stemKeyedStub("en", { running: enSynonyms.running });
     const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
     assert.equal(result.length, 1);
     assert.equal(result[0].word, "running");
@@ -139,6 +152,7 @@ describe("synonym-scanner — findOverusedWords", () => {
 
   test("suggestions are capped at top 2", () => {
     // Build a stub where the synonym list for a word has 5 entries.
+    // "bigword" is its own Porter stem, so the key is unchanged.
     const synonyms = makeSynonymsStub({
       en: { bigword: { s: ["a", "b", "c", "d", "e"] } },
     });
@@ -167,7 +181,7 @@ describe("synonym-scanner — findOverusedWords", () => {
       "apple apple",
       "apple apple",
     ];
-    const synonyms = makeSynonymsStub({ en: enSynonyms, ru: ruSynonyms });
+    const synonyms = stemKeyedStub("en", { apple: enSynonyms.apple });
     const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
     const entry = result.find((r) => r.word === "apple");
     assert.ok(entry);
@@ -186,12 +200,74 @@ describe("synonym-scanner — findOverusedWords", () => {
   });
 });
 
+describe("synonym-scanner — inflected-input matching via normalize", () => {
+  // Per Task 7: stub keys are STEMS (the form the build pipeline now emits).
+  // Compute them via normalize() rather than hand-guessing — see design §13.3.
+  test("EN inflected chat token matches Porter-stemmed fixture key", () => {
+    const enStub = {
+      [normalize("apple", "en")]: { s: ["fruit", "pome"] },
+      [normalize("run", "en")]: { s: ["jogging", "sprinting"] },
+    };
+    const synonyms = makeSynonymsStub({ en: enStub });
+    // Chat uses inflected forms; scanner must normalize before lookup.
+    const history = ["apples apples running running"];
+    const result = findOverusedWords(history, "en", baseSettings(6, 2), { synonyms });
+    const words = result.map((r) => r.word).sort();
+    // Returned word is the RAW chat token (display fidelity), not the stem.
+    assert.deepEqual(words, ["apples", "running"]);
+    const applesEntry = result.find((r) => r.word === "apples");
+    assert.ok(applesEntry, "apples entry must be surfaced");
+    assert.deepEqual(applesEntry.suggestions, ["fruit", "pome"]);
+  });
+
+  test("RU inflected chat token matches Snowball-stemmed fixture key", () => {
+    const ruStub = {
+      [normalize("госпожа", "ru")]: { s: ["леди", "дама"] },
+      [normalize("ёлка", "ru")]: { s: ["хвоя", "ель"] },
+    };
+    const synonyms = makeSynonymsStub({ ru: ruStub });
+    // Chat uses case-forms; both should resolve to the same stem key.
+    const history = ["госпожой госпожой ёлка ёлка"];
+    const result = findOverusedWords(history, "ru", baseSettings(6, 2), { synonyms });
+    const words = result.map((r) => r.word).sort();
+    assert.deepEqual(words, ["госпожой", "ёлка"]);
+    const gospEntry = result.find((r) => r.word === "госпожой");
+    assert.ok(gospEntry);
+    assert.deepEqual(gospEntry.suggestions, ["леди", "дама"]);
+  });
+
+  test("ё→е: chat token 'ёлка' matches fixture key computed from 'елка' (stem)", () => {
+    // The build applies ё→е before stemming, so the key is the stem of "елка".
+    // The chat token contains ё; scanner must apply the same ё→е + stem.
+    const expectedKey = normalize("елка", "ru");
+    assert.equal(normalize("ёлка", "ru"), expectedKey, "sanity: ё and е forms collapse");
+    assert.doesNotMatch(expectedKey, /ё/, "sanity: stem key must not contain ё");
+    const ruStub = { [expectedKey]: { s: ["хвоя"] } };
+    const synonyms = makeSynonymsStub({ ru: ruStub });
+    const result = findOverusedWords(["ёлка ёлка"], "ru", baseSettings(6, 2), { synonyms });
+    assert.equal(result.length, 1);
+    assert.equal(result[0].word, "ёлка");
+    assert.deepEqual(result[0].suggestions, ["хвоя"]);
+  });
+
+  test("EN stem-key mismatch (un-stemmed fixture key) does NOT match", () => {
+    // Negative case: a fixture whose key is a raw headword (not a stem) should
+    // not be reached by an inflected chat token under the new pipeline.
+    const synonyms = makeSynonymsStub({
+      en: { apple: { s: ["fruit"] } }, // headword key, not stem
+    });
+    const result = findOverusedWords(["apples apples"], "en", baseSettings(6, 2), { synonyms });
+    assert.deepEqual(result, []);
+  });
+});
+
 describe("sorting and topN", () => {
   // Inline stub with arbitrary words so we can craft exact frequency scenarios
-  // without touching the shared fixture.
+  // without touching the shared fixture. Keys are stored under each word's
+  // stem so the normalizing scanner can reach them.
   function stub(words) {
     const data = {};
-    for (const w of words) data[w] = { s: ["syn-" + w, "syn2-" + w] };
+    for (const w of words) data[normalize(w, "en")] = { s: ["syn-" + w, "syn2-" + w] };
     return makeSynonymsStub({ en: data });
   }
 
