@@ -1,13 +1,19 @@
 // SillyTavern extension entry point.
 // Per design §4 (file structure), §8 (src/index.js interface), §9.1 (init
 // sequence), §9.3 (failure modes). Wires ST globals into the settings,
-// data, engine, and ui layers and registers the CHAT_COMPLETION_PROMPT_READY
-// listener. Asset loading stays lazy per §9.2 — nothing is fetched at boot.
+// data, engine, and ui layers and registers the GENERATION_AFTER_COMMANDS
+// listener that drives setExtensionPrompt for the two slots. Asset loading
+// stays lazy per §9.2 — nothing is fetched at boot.
 //
 // Root index.js re-exports this module so manifest.json's `js: "index.js"`
 // keeps pointing at the file ST has always loaded.
 
-import { saveSettingsDebounced } from '../../../../../script.js';
+import {
+  saveSettingsDebounced,
+  setExtensionPrompt,
+  extension_prompt_types,
+  extension_prompt_roles,
+} from '../../../../../script.js';
 import { extension_settings } from '../../../../extensions.js';
 import {
   loadSettings,
@@ -28,7 +34,8 @@ import {
 import { resolveLanguage } from './data/language.js';
 import { generateWords } from './engine/random-words.js';
 import {
-  onPromptReady,
+  buildInjections,
+  mapRole,
   __setDepsForTest as setInjectorDeps,
 } from './engine/injector.js';
 import {
@@ -38,6 +45,9 @@ import {
 } from './ui/panel.js';
 
 const EXTENSION_NAME = 'rabbit-response-team';
+
+const SLOT_RANDOM = 'rabbitResponseTeam_random';
+const SLOT_SYNONYM = 'rabbitResponseTeam_synonym';
 
 // Track whether we've already surfaced an asset-load failure this session.
 // §9.3 says "toastr.error once" — the user shouldn't see a toast on every
@@ -75,29 +85,137 @@ async function ensureAssetsForLanguage(lang) {
   );
 }
 
-// Wrap onPromptReady so the lazy asset load + one-time toastr live here in
-// the entry point, keeping the injector focused on prompt mutation.
-async function handlePromptReady(promptData) {
+// Apply a rendered slot via setExtensionPrompt. IN_CHAT (1) places the
+// prompt into the in-chat depth-controlled slot, matching the pre-refactor
+// injectionDepth behavior.
+function writeSlot(key, injection) {
+  setExtensionPrompt(
+    key,
+    injection.content,
+    extension_prompt_types.IN_CHAT,
+    injection.depth,
+    false,
+    injection.role,
+  );
+}
+
+// Clear a slot by writing an empty value at depth 0 / SYSTEM role. Keeps
+// stale content from prior turns out of the prompt when a feature is
+// disabled or produced nothing this turn.
+function clearSlot(key) {
+  setExtensionPrompt(
+    key,
+    '',
+    extension_prompt_types.IN_CHAT,
+    0,
+    false,
+    extension_prompt_roles.SYSTEM,
+  );
+}
+
+// GENERATION_AFTER_COMMANDS listener. Builds the two slot descriptors via
+// the pure-compute injector and applies (or clears) them via
+// setExtensionPrompt. Diagnostic logs at every decision point so silent
+// failures become traceable in the browser console.
+async function handleGeneration(type, options, dryRun) {
+  const startedAt =
+    typeof performance !== 'undefined' && performance.now
+      ? performance.now()
+      : Date.now();
+  console.log(`🐰 RRT: handleGeneration entry type=${type} dryRun=${dryRun}`);
   try {
     const settings = loadSettings();
     const rwEnabled = !!settings?.randomWords?.enabled;
     const synEnabled = !!settings?.synonyms?.enabled;
-    if (!rwEnabled && !synEnabled) return promptData;
+    console.log(
+      `🐰 RRT: enabled random=${rwEnabled} synonyms=${synEnabled}`,
+    );
 
-    // Resolve language the same way the injector will, so we only fetch the
-    // bundle we actually need.
-    const { chat } = SillyTavern.getContext?.() ?? {};
+    if (!rwEnabled && !synEnabled) {
+      clearSlot(SLOT_RANDOM);
+      clearSlot(SLOT_SYNONYM);
+      console.log(
+        `🐰 RRT: slot=random action=clear reason=disabled`,
+      );
+      console.log(
+        `🐰 RRT: slot=synonym action=clear reason=disabled`,
+      );
+      return;
+    }
+
+    const { chat: ctxChat } = SillyTavern.getContext?.() ?? {};
     const lastUser =
-      Array.isArray(chat) && chat.length
-        ? (chat.slice().reverse().find((m) => m?.is_user)?.mes ?? '')
+      Array.isArray(ctxChat) && ctxChat.length
+        ? (ctxChat
+            .slice()
+            .reverse()
+            .find((m) => m?.is_user)?.mes ?? '')
         : '';
-    const resolved = resolveLanguage(settings.language || 'auto', lastUser);
+    const resolved = resolveLanguage(
+      settings.language || 'auto',
+      lastUser,
+    );
+    console.log(
+      `🐰 RRT: resolved lang=${resolved} (lastUser ${lastUser.length} chars)`,
+    );
 
-    await ensureAssetsForLanguage(resolved);
-  } catch {
-    // Already announced via announceFailure; injector will no-op cleanly.
+    try {
+      await ensureAssetsForLanguage(resolved);
+      console.log('🐰 RRT: assets loaded');
+    } catch {
+      // ensureAssetsForLanguage already announced via toastr. Clear slots
+      // and bail — the injector must not run against missing data.
+      clearSlot(SLOT_RANDOM);
+      clearSlot(SLOT_SYNONYM);
+      console.log(
+        `🐰 RRT: slot=random action=clear reason=asset-failure`,
+      );
+      console.log(
+        `🐰 RRT: slot=synonym action=clear reason=asset-failure`,
+      );
+      return;
+    }
+
+    const chatTexts = (ctxChat ?? []).map(
+      (m) => m?.mes ?? m?.content ?? '',
+    );
+    const result = await buildInjections(
+      settings,
+      resolved,
+      lastUser,
+      chatTexts,
+    );
+
+    if (result.random) {
+      writeSlot(SLOT_RANDOM, result.random);
+      console.log(
+        `🐰 RRT: slot=random action=set contentLen=${result.random.content.length} depth=${result.random.depth} role=${result.random.role}`,
+      );
+    } else {
+      clearSlot(SLOT_RANDOM);
+      console.log(`🐰 RRT: slot=random action=clear`);
+    }
+
+    if (result.synonyms) {
+      writeSlot(SLOT_SYNONYM, result.synonyms);
+      console.log(
+        `🐰 RRT: slot=synonym action=set contentLen=${result.synonyms.content.length} depth=${result.synonyms.depth} role=${result.synonyms.role}`,
+      );
+    } else {
+      clearSlot(SLOT_SYNONYM);
+      console.log(`🐰 RRT: slot=synonym action=clear`);
+    }
+  } catch (err) {
+    console.warn('🐰 RRT: handleGeneration failed:', err);
+  } finally {
+    const endedAt =
+      typeof performance !== 'undefined' && performance.now
+        ? performance.now()
+        : Date.now();
+    console.log(
+      `🐰 RRT: handleGeneration exit duration=${Math.round(endedAt - startedAt)}ms`,
+    );
   }
-  return onPromptReady(promptData);
 }
 
 function registerEventListener() {
@@ -106,14 +224,14 @@ function registerEventListener() {
     console.warn('Rabbit Response Team: SillyTavern event bus unavailable.');
     return;
   }
-  const type = event_types.CHAT_COMPLETION_PROMPT_READY;
+  const type = event_types.GENERATION_AFTER_COMMANDS;
   if (!type) {
     console.warn(
-      'Rabbit Response Team: CHAT_COMPLETION_PROMPT_READY not found in event_types.',
+      'Rabbit Response Team: GENERATION_AFTER_COMMANDS not found in event_types.',
     );
     return;
   }
-  eventSource.on(type, handlePromptReady);
+  eventSource.makeFirst(type, handleGeneration);
 }
 
 function wireDeps() {

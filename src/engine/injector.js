@@ -42,7 +42,7 @@ function renderTemplate(template, vars) {
 // Map a role string from settings to a setExtensionPrompt role index.
 // Unknown values fall back to SYSTEM (0) and emit a warn so misconfigs are
 // traceable rather than silent.
-function mapRole(roleStr) {
+export function mapRole(roleStr) {
   switch (roleStr) {
     case "system":
       return 0;
