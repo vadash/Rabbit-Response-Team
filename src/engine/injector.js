@@ -58,6 +58,66 @@ export function mapRole(roleStr) {
   }
 }
 
+// Pure synonym-prompt renderer shared by the production injector and the
+// preview/Test button. Runs the scan, builds the rows, applies the outer
+// template, and returns the rendered string. Returns null when no overused
+// words qualify or when template rendering fails (broken '{{'); the caller
+// decides how to surface that — production slot stays null, preview returns
+// null so the UI can show a "no overused words" toast. The syn.depth/role
+// are NOT applied here; this layer only computes the content string.
+function renderSynonymPrompt(syn, lang, chatTexts, settings) {
+  const overused = findOverusedWords(chatTexts, lang, settings, {
+    synonyms: deps.synonyms,
+  });
+  if (!Array.isArray(overused) || overused.length === 0) return null;
+
+  const mode = syn.outputMode ?? "with-suggestions";
+  const rowTemplate = syn.customPromptRow ?? "";
+  const rows = overused.map((entry) => {
+    const synonyms =
+      mode === "avoid-only"
+        ? ""
+        : entry.suggestions.map((w) => `"${w}"`).join(", ");
+    let rendered = renderTemplate(rowTemplate, {
+      originalWord: entry.word,
+      count: String(entry.count),
+      synonyms,
+    });
+    if (mode === "avoid-only") {
+      rendered = rendered.replace(/\s*[—–-]\s*try:\s*$/i, "");
+    }
+    return rendered;
+  });
+  const joinedRows = rows.join("\n");
+  return renderTemplate(syn.customPrompt, { rows: joinedRows });
+}
+
+/**
+ * Pure preview of what the synonyms slot would render for the given chat
+ * history. Used by the Test button in the settings panel. Returns the
+ * rendered string, or null when no words qualify (the UI surfaces this as a
+ * "no overused words" toast). Reuses the same scan + render pipeline as the
+ * production slot, so what you see in the preview is what would be injected.
+ *
+ * Does not read settings.randomWords, so callers may pass a settings object
+ * without it. Never throws — broken templates surface as null.
+ *
+ * @param {object} settings
+ * @param {"en"|"ru"} lang
+ * @param {string[]} chatTexts
+ * @returns {Promise<string|null>}
+ */
+export async function buildSynonymsPreview(settings, lang, chatTexts) {
+  const syn = settings?.synonyms ?? {};
+  if (!syn.enabled) return null;
+  try {
+    return renderSynonymPrompt(syn, lang, chatTexts, settings);
+  } catch (err) {
+    deps.warn("Rabbit Response Team: synonyms preview failed:", err);
+    return null;
+  }
+}
+
 /**
  * Build rendered injection descriptors for the current turn, without touching
  * ST globals or promptData. Each slot is computed independently; a disabled
@@ -98,33 +158,10 @@ export async function buildInjections(settings, lang, userMessage, chatTexts) {
 
   if (syn.enabled) {
     try {
-      const overused = findOverusedWords(chatTexts, lang, settings, {
-        synonyms: deps.synonyms,
-      });
-      if (Array.isArray(overused) && overused.length > 0) {
+      const rendered = renderSynonymPrompt(syn, lang, chatTexts, settings);
+      if (rendered !== null) {
         const synDepth = syn.injectionDepth ?? 0;
         const synRole = mapRole(syn.injectionEndRole ?? "system");
-        const mode = syn.outputMode ?? "with-suggestions";
-        const rowTemplate = syn.customPromptRow ?? "";
-        const rows = overused.map((entry) => {
-          const synonyms =
-            mode === "avoid-only"
-              ? ""
-              : entry.suggestions.map((w) => `"${w}"`).join(", ");
-          let rendered = renderTemplate(rowTemplate, {
-            originalWord: entry.word,
-            count: String(entry.count),
-            synonyms,
-          });
-          if (mode === "avoid-only") {
-            rendered = rendered.replace(/\s*[—–-]\s*try:\s*$/i, "");
-          }
-          return rendered;
-        });
-        const joinedRows = rows.join("\n");
-        const rendered = renderTemplate(syn.customPrompt, {
-          rows: joinedRows,
-        });
         synonymsSlot = { content: rendered, depth: synDepth, role: synRole };
       }
     } catch (err) {

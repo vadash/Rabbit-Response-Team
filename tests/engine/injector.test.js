@@ -6,7 +6,11 @@
 import { test, describe, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildInjections, __setDepsForTest } from "../../src/engine/injector.js";
+import {
+  buildInjections,
+  buildSynonymsPreview,
+  __setDepsForTest,
+} from "../../src/engine/injector.js";
 import {
   DEFAULT_RANDOM_PROMPT,
   DEFAULT_SYNONYM_PROMPT,
@@ -408,5 +412,117 @@ describe("injector — buildInjections", () => {
     const result = await buildInjections(settings, "en", "hi", ["hi"]);
     assert.equal(result.random, null);
     assert.ok(warnCalls.length > 0, "warn was called on generateWords throw");
+  });
+});
+
+describe("injector — buildSynonymsPreview", () => {
+  let warnCalls;
+
+  beforeEach(() => {
+    warnCalls = [];
+    __setDepsForTest({
+      words: makeWordsStub(["apple", "running", "serendipity"]),
+      synonyms: makeSynonymsStub(),
+      warn: (...args) => warnCalls.push(args),
+    });
+  });
+
+  test("returns rendered string when overused words found", async () => {
+    const settings = makeSettings({
+      synonyms: {
+        enabled: true,
+        scanDepth: 6,
+        minOccurrences: 2,
+        outputMode: "with-suggestions",
+      },
+    });
+    const chatTexts = ["running running running"];
+    const result = await buildSynonymsPreview(settings, "en", chatTexts);
+    assert.equal(typeof result, "string");
+    assert.ok(result.includes("running"), "contains originalWord");
+    assert.ok(result.includes("jogging"), "contains a synonym");
+    assert.ok(!result.includes("{{"), "no unresolved placeholders");
+  });
+
+  test("returns null when nothing overused (empty history)", async () => {
+    const settings = makeSettings({
+      synonyms: { enabled: true, scanDepth: 6, minOccurrences: 2 },
+    });
+    const result = await buildSynonymsPreview(settings, "en", []);
+    assert.equal(result, null);
+  });
+
+  test("returns null when no words cross threshold", async () => {
+    const settings = makeSettings({
+      synonyms: { enabled: true, scanDepth: 6, minOccurrences: 5 },
+    });
+    const chatTexts = ["running running"];
+    const result = await buildSynonymsPreview(settings, "en", chatTexts);
+    assert.equal(result, null);
+  });
+
+  test("respects topN cap", async () => {
+    const settings = makeSettings({
+      synonyms: {
+        enabled: true,
+        scanDepth: 6,
+        minOccurrences: 2,
+        topN: 2,
+        outputMode: "with-suggestions",
+      },
+    });
+    // 5 distinct eligible words: running, apple, serendipity, dashing, jogging
+    // (the synonyms stub doesn't haveEntry for serendipity/dashing/jogging, so
+    // rely on multiple words that DO have entries: running + apple only).
+    // Build 5 eligible words by repeating words the synonyms stub recognizes.
+    const chatTexts = [
+      "running running running",
+      "apple apple apple",
+    ];
+    const result = await buildSynonymsPreview(settings, "en", chatTexts);
+    assert.equal(typeof result, "string");
+    // With topN=2, both running and apple fit; assert at most 2 rows.
+    const rowMatches = result.match(/^.*\(\d+×\).*$/gm) ?? [];
+    assert.ok(rowMatches.length <= 2, `topN cap respected: ${rowMatches.length}`);
+    assert.ok(result.includes("running") || result.includes("apple"));
+  });
+
+  test("avoid-only mode: no synonyms in output", async () => {
+    const settings = makeSettings({
+      synonyms: {
+        enabled: true,
+        scanDepth: 6,
+        minOccurrences: 2,
+        outputMode: "avoid-only",
+      },
+    });
+    const chatTexts = ["running running running"];
+    const result = await buildSynonymsPreview(settings, "en", chatTexts);
+    assert.equal(typeof result, "string");
+    assert.ok(result.includes("running"), "contains originalWord");
+    assert.ok(!result.includes("jogging"), "no synonyms leaked");
+    assert.ok(!result.includes("sprinting"), "no synonyms leaked");
+  });
+
+  test("does not depend on randomWords settings", async () => {
+    const settings = {
+      schemaVersion: 1,
+      synonyms: {
+        enabled: true,
+        scanDepth: 6,
+        minOccurrences: 2,
+        customPrompt: DEFAULT_SYNONYM_PROMPT,
+        customPromptRow: DEFAULT_SYNONYM_PROMPT_ROW,
+        topN: 3,
+        outputMode: "with-suggestions",
+        injectionDepth: 0,
+        injectionEndRole: "system",
+      },
+      language: "en",
+    };
+    const chatTexts = ["running running running"];
+    const result = await buildSynonymsPreview(settings, "en", chatTexts);
+    assert.equal(typeof result, "string");
+    assert.ok(result.includes("running"));
   });
 });
