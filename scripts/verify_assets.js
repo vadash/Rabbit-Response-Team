@@ -6,18 +6,39 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUILD } from "./constants.js";
+import { normalize } from "./lib/stemmer.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Verify all assets under assetsDir.
+ *
  * @param {string} assetsDir — absolute path to assets/ directory
- * @returns {{ ok: boolean, errors: string[], warnings: string[], totalBytes: number }}
+ * @param {{ verbose?: boolean }} [opts] — verbose=true enables per-step stderr
+ *   progress and per-offender diagnostics. CLI sets this from DEBUG_VERIFY.
+ * @returns {{
+ *   ok: boolean,
+ *   errors: string[],
+ *   warnings: string[],
+ *   totalBytes: number,
+ *   stemOffenders: { en: Array<{key:string, stem:string}>, ru: Array<{key:string, stem:string}> }
+ * }}
  */
-export function verify(assetsDir) {
+export function verify(assetsDir, opts = {}) {
+  const verbose = !!opts.verbose;
+  /** @param {...unknown} a */
+  const vlog = (...a) => {
+    if (verbose) process.stderr.write(a.join(" ") + "\n");
+  };
+
   const errors = [];
   const warnings = [];
   let totalBytes = 0;
+  /** @type {{ en: any[], ru: any[] }} */
+  const stemOffenders = { en: [], ru: [] };
+
+  vlog(`[verify] start; verbose=${verbose}; assetsDir=${assetsDir}`);
+
 
   // (a) assets/ dir must exist
   if (!fs.existsSync(assetsDir)) {
@@ -108,12 +129,58 @@ export function verify(assetsDir) {
       }
     }
 
-    // (d) Synonym key must exist in words
+    // (d) Synonym key must correspond to a word in the bank.
+    // Synonym keys are stems (Task 5); words.json holds headwords. Compare via
+    // normalize() so a stemmed synonym key matches the headword it derived from.
+    const wordStems = new Set();
+    for (const w of wordSet) {
+      const s = normalize(w, lang);
+      if (s) wordStems.add(s);
+    }
+    vlog(`[verify][${lang}] words.json produced ${wordStems.size} unique stem(s)`);
     for (const word of Object.keys(synonyms)) {
-      if (!wordSet.has(word)) {
+      if (!wordStems.has(word)) {
         errors.push(
-          `${lang}/synonyms.json: key "${word}" not found in words.json`
+          `${lang}/synonyms.json: key "${word}" not found in words.json (nor its stem)`
         );
+      }
+    }
+
+    // (h) Stem-key invariant — every synonyms key must equal normalize(key, lang).
+    // Build pipeline (Task 5) writes stemmed keys; this catches hand-edits that
+    // re-introduce headword-form keys and break runtime lookup parity.
+    {
+      const keys = Object.keys(synonyms);
+      vlog(`[verify][${lang}] stem-invariant check on ${keys.length} synonym key(s)`);
+      const offenders = [];
+      let scanned = 0;
+      const progressInterval = Math.max(1000, Math.floor(keys.length / 10));
+      for (const key of keys) {
+        scanned++;
+        const stem = normalize(key, lang);
+        if (key !== stem) {
+          offenders.push({ key, stem });
+        }
+        if (verbose && scanned % progressInterval === 0) {
+          vlog(`[verify][${lang}]   scanned ${scanned}/${keys.length}, ${offenders.length} offender(s) so far`);
+        }
+      }
+      stemOffenders[lang] = offenders;
+      vlog(`[verify][${lang}] stem-invariant: ${offenders.length} offender(s) of ${scanned}`);
+      if (offenders.length > 0) {
+        const preview = offenders.slice(0, 5).map(o => `"${o.key}"→"${o.stem}"`).join(", ");
+        errors.push(
+          `${lang}/synonyms.json: ${offenders.length} key(s) not stemmed (key !== normalize(key, lang)). First: ${preview}`
+        );
+        if (verbose) {
+          const show = offenders.slice(0, 50);
+          for (const o of show) {
+            vlog(`[verify][${lang}]   ✗ "${o.key}" → stem "${o.stem}"`);
+          }
+          if (offenders.length > show.length) {
+            vlog(`[verify][${lang}]   ...and ${offenders.length - show.length} more`);
+          }
+        }
       }
     }
 
@@ -167,7 +234,8 @@ export function verify(assetsDir) {
   }
 
   const ok = errors.length === 0;
-  return { ok, errors, warnings, totalBytes };
+  vlog(`[verify] done; ok=${ok}; errors=${errors.length}; warnings=${warnings.length}`);
+  return { ok, errors, warnings, totalBytes, stemOffenders };
 }
 
 // CLI entry point — only runs when invoked directly
@@ -178,7 +246,8 @@ const isDirectRun =
 
 if (isDirectRun) {
   const assetsDir = process.argv[2] || path.join(process.cwd(), "assets");
-  const result = verify(assetsDir);
+  const verbose = ["1", "true", "yes"].includes((process.env.DEBUG_VERIFY || "").toLowerCase());
+  const result = verify(assetsDir, { verbose });
 
   if (result.warnings.length > 0) {
     for (const w of result.warnings) {

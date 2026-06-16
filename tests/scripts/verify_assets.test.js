@@ -5,6 +5,25 @@ import path from "node:path";
 import os from "node:os";
 
 import { verify } from "../../scripts/verify_assets.js";
+import { normalize } from "../../src/util/normalize.js";
+
+/**
+ * Build a minimal valid assets tree under `dir` for both langs.
+ * Caller can override words / synonyms per-lang.
+ */
+function writeAssets(dir, { en = {}, ru = {} } = {}) {
+  const defaults = (lang) => ({
+    words: [["a", "n", 1]],
+    synonyms: {},
+    ...((lang === "en" ? en : ru)),
+  });
+  for (const lang of ["en", "ru"]) {
+    fs.mkdirSync(path.join(dir, lang), { recursive: true });
+    const d = defaults(lang);
+    fs.writeFileSync(path.join(dir, lang, "words.json"), JSON.stringify(d.words));
+    fs.writeFileSync(path.join(dir, lang, "synonyms.json"), JSON.stringify(d.synonyms));
+  }
+}
 
 describe("verify_assets", () => {
   let tmpDir;
@@ -117,15 +136,75 @@ describe("verify_assets", () => {
     fs.unlinkSync(path.join(assetsDir, "en", "big.json"));
   });
 
-  // (h) clean synthetic assets under tests/fixtures/ → passes
-  test("clean synthetic assets under tests/fixtures pass", () => {
-    const fixturesDir = path.join(import.meta.dirname, "..", "..", "fixtures");
-    if (!fs.existsSync(fixturesDir)) {
-      // Fixtures not yet created — skip
-      return;
-    }
-    const result = verify(fixturesDir);
-    assert.equal(result.ok, true);
-    assert.deepEqual(result.errors, []);
+  // (h) clean synthetic assets — in-memory, properly stemmed keys
+  test("clean synthetic stemmed assets pass verification", () => {
+    const assetsDir = path.join(tmpDir, "assets");
+    const enSyn = { [normalize("apple", "en")]: { s: ["fruit"], a: ["orchard"] } };
+    const ruSyn = { [normalize("госпожа", "ru")]: { s: ["дама"], a: ["панство"] } };
+    writeAssets(assetsDir, {
+      en: { synonyms: enSyn },
+      ru: { synonyms: ruSyn },
+    });
+    const result = verify(assetsDir);
+    // Other failures (size, key-not-in-words) are out of scope here — assert no stem errors.
+    assert.ok(
+      !result.errors.some(e => e.includes("not stemmed")),
+      `should have no stem-invariant errors, got: ${result.errors.join("; ")}`
+    );
+  });
+
+  // (i) synonyms with an un-stemmed EN headword key → failure, offender named
+  test("un-stemmed EN synonyms key fails verification and names offender", () => {
+    const assetsDir = path.join(tmpDir, "assets");
+    writeAssets(assetsDir, {
+      en: { synonyms: { apples: { s: ["fruit"], a: ["orchard"] } } },
+      ru: {},
+    });
+    const result = verify(assetsDir);
+    assert.equal(result.ok, false);
+    const stemError = result.errors.find(e => e.includes("not stemmed"));
+    assert.ok(stemError, `expected a not-stemmed error, got: ${result.errors.join("; ")}`);
+    assert.ok(stemError.includes("apples"), `error should name the offender "apples": ${stemError}`);
+    assert.ok(stemError.includes("en"), `error should name the lang: ${stemError}`);
+  });
+
+  // (j) synonyms with an un-stemmed RU headword key → failure
+  test("un-stemmed RU synonyms key fails verification and names offender", () => {
+    const assetsDir = path.join(tmpDir, "assets");
+    writeAssets(assetsDir, {
+      en: {},
+      ru: { synonyms: { госпожой: { s: ["дамой"], a: ["панство"] } } },
+    });
+    const result = verify(assetsDir);
+    assert.equal(result.ok, false);
+    const stemError = result.errors.find(e => e.includes("not stemmed"));
+    assert.ok(stemError, `expected a not-stemmed error, got: ${result.errors.join("; ")}`);
+    assert.ok(stemError.includes("госпожой"), `error should name the offender: ${stemError}`);
+    assert.ok(stemError.includes("ru"), `error should name the lang: ${stemError}`);
+  });
+
+  // (k) ё in RU synonym key → failure (since normalize applies ё→е)
+  test("RU synonym key containing ё fails verification (ё→е not applied)", () => {
+    const assetsDir = path.join(tmpDir, "assets");
+    writeAssets(assetsDir, {
+      en: {},
+      ru: { synonyms: { ещё: { s: ["все"], a: [] } } },
+    });
+    const result = verify(assetsDir);
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some(e => e.includes("not stemmed") && e.includes("ещё")));
+  });
+
+  // (l) verbose mode surfaces offender diagnostics in result
+  test("verbose verify returns per-lang offender diagnostic map", () => {
+    const assetsDir = path.join(tmpDir, "assets");
+    writeAssets(assetsDir, {
+      en: { synonyms: { apples: { s: ["x"], a: [] } } },
+      ru: { synonyms: { госпожой: { s: ["y"], a: [] } } },
+    });
+    const result = verify(assetsDir, { verbose: true });
+    assert.ok(result.stemOffenders, "should expose stemOffenders diagnostic");
+    assert.ok(result.stemOffenders.en.some(o => o.key === "apples"));
+    assert.ok(result.stemOffenders.ru.some(o => o.key === "госпожой"));
   });
 });

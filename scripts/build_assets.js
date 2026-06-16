@@ -187,8 +187,23 @@ function buildLanguage(lang, rawPath, normalize, extractSynonyms, yarnPath) {
   console.log(`[${lang}] Words with synonym entries: ${Object.keys(synonyms).length}`);
 
   console.log(`[${lang}] Stemming synonym keys + merging collisions...`);
+  const inputCount = Object.keys(synonyms).length;
   const stemmed = stemAndMergeSynonyms(synonyms, lang);
-  console.log(`[${lang}] After stem+merge: ${Object.keys(stemmed).length} keys`);
+  const outputCount = Object.keys(stemmed).length;
+  const collisions = inputCount - outputCount;
+  console.log(
+    `[${lang}] After stem+merge: ${outputCount} keys (input ${inputCount} headwords → ${collisions} collision${collisions === 1 ? "" : "s"} merged)`
+  );
+  if (process.env.DEBUG_BUILD === "1" && collisions > 0) {
+    // Sample the first few merged entries to inspect unioned s/a arrays.
+    let shown = 0;
+    for (const [key, entry] of Object.entries(stemmed)) {
+      if (entry.s.length + entry.a.length > 0 && shown < 5) {
+        console.log(`[${lang}]   merged key "${key}": s=${entry.s.length} a=${entry.a.length}`);
+        shown++;
+      }
+    }
+  }
 
   const synonymsPath = path.join(REPO_ROOT, "assets", lang, "synonyms.json");
   writeJsonAtomic(synonymsPath, stemmed);
