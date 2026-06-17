@@ -51,7 +51,7 @@ describe("words.js — lazy loading", () => {
 
   test("ensureWordBankLoaded populates the cache", async () => {
     await ensureWordBankLoaded("en");
-    assert.equal(getWordBank("en").length, 50);
+    assert.equal(getWordBank("en").length, enFixture.length);
   });
 
   test("ensureWordBankLoaded is idempotent (second call does not refetch)", async () => {
@@ -71,8 +71,8 @@ describe("words.js — lazy loading", () => {
   test("each language has an independent cache slot", async () => {
     await ensureWordBankLoaded("en");
     await ensureWordBankLoaded("ru");
-    assert.equal(getWordBank("en").length, 50);
-    assert.equal(getWordBank("ru").length, 50);
+    assert.equal(getWordBank("en").length, enFixture.length);
+    assert.equal(getWordBank("ru").length, ruFixture.length);
     assert.notEqual(getWordBank("en"), getWordBank("ru"));
   });
 

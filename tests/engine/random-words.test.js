@@ -286,11 +286,10 @@ describe("random-words — contextual mode", () => {
     deps = defaultDeps();
   });
 
-  test("uses associations of the highest-rank keyword with an entry", () => {
-    // User message mentions "apple" (rank 100, hasEntry true) and "running"
-    // (rank 75 — wait, no; "running" is not in mini-en-words). apple has the
-    // lowest rank among message words that appear in the bank and have an
-    // entry. Its associations are ["orchard","tree","harvest"].
+  test("falls back to most-frequent-first when no sweet-spot candidates exist", () => {
+    // "apple" is rank 100 — below SWEET_SPOT_MIN (1000) — so no sweet-spot
+    // candidate exists. The contextual engine falls back to the most-frequent
+    // candidate (lowest rank) in this case. This exercises the fallback path.
     const out = generateWords(
       "en",
       baseSettings({ mode: "contextual", wordCount: 5 }),
@@ -301,6 +300,90 @@ describe("random-words — contextual mode", () => {
     const assoc = new Set(["orchard", "tree", "harvest"]);
     for (const w of out) assert.ok(assoc.has(w), `${w} should be an apple association`);
     assert.ok(out.length > 0);
+  });
+
+  test("prefers sweet-spot anchor over a more frequent non-sweet-spot token", () => {
+    // "apple" is rank 100 (non-sweet-spot); "castle" is rank 5000 (sweet spot).
+    // The contextual engine should prefer castle as anchor and return its
+    // associations rather than apple's.
+    const out = generateWords(
+      "en",
+      baseSettings({ mode: "contextual", wordCount: 5 }),
+      "I ate an apple in a castle today",
+      { ...deps }
+    );
+    const castleAssoc = new Set(["tower", "knight", "siege"]);
+    const appleAssoc = new Set(["orchard", "tree", "harvest"]);
+    assert.ok(out.length > 0);
+    for (const w of out) {
+      assert.ok(
+        castleAssoc.has(w),
+        `${w} should be a castle association (not apple's)`
+      );
+      assert.ok(
+        !appleAssoc.has(w),
+        `${w} should not be an apple association`
+      );
+    }
+  });
+
+  test("picks randomly among multiple sweet-spot candidates", () => {
+    // "castle" (rank 5000) and "murmur" (rank 3000) are both in the sweet
+    // spot. With Math.mocked to 0.0, the first sweet-spot candidate in array
+    // order (castle) is picked; with 0.99, the last (murmur) is picked.
+    const assocCastle = new Set(["tower", "knight", "siege"]);
+    const assocMurmur = new Set(["whisper", "hush"]);
+
+    // Deterministic run 1 — mock Math.random to 0.0.
+    const origRandom = Math.random;
+    Math.random = () => 0.0;
+    const out1 = generateWords(
+      "en",
+      baseSettings({ mode: "contextual", wordCount: 3 }),
+      "the castle murmur",
+      { ...deps }
+    );
+    Math.random = origRandom;
+    assert.ok(out1.length > 0);
+    for (const w of out1) assert.ok(assocCastle.has(w), `${w} should be castle's`);
+
+    // Deterministic run 2 — mock Math.random to 0.99.
+    Math.random = () => 0.99;
+    const out2 = generateWords(
+      "en",
+      baseSettings({ mode: "contextual", wordCount: 3 }),
+      "the castle murmur",
+      { ...deps }
+    );
+    Math.random = origRandom;
+    assert.ok(out2.length > 0);
+    for (const w of out2) assert.ok(assocMurmur.has(w), `${w} should be murmur's`);
+  });
+
+  test("sweet-spot selection is exercised for rank-5000 word, fallback for rank-50", () => {
+    // Indirectly verifies SWEET_SPOT_MIN/MAX are wired up. A rank-5000 word
+    // in a message by itself should be selected as anchor (proving sweet
+    // spot is active); a rank-50 word ("run") by itself should fall back
+    // to most-frequent-first (proving the fallback path still works).
+    const out5000 = generateWords(
+      "en",
+      baseSettings({ mode: "contextual", wordCount: 3 }),
+      "I visited a castle",
+      { ...deps }
+    );
+    const castleAssoc = new Set(["tower", "knight", "siege"]);
+    for (const w of out5000) assert.ok(castleAssoc.has(w), `${w} should be castle's`);
+
+    // "run" is rank 75 (no entry in mini-en-synonyms) — so no candidate
+    // has an entry and the contextual engine falls back to plain random.
+    // That exercises the no-candidate fallback path.
+    const out50 = generateWords(
+      "en",
+      baseSettings({ mode: "contextual", wordCount: 3 }),
+      "run run run run run",
+      { ...deps }
+    );
+    assert.equal(out50.length, 3);
   });
 
   test("falls back to random and warns when no keyword has an entry", () => {

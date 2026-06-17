@@ -48,5 +48,7 @@
   ["gentle", "a", 8400],
   ["narrow", "a", 8600],
   ["travel", "v", 8700],
-  ["wander", "v", 8900]
+  ["wander", "v", 8900],
+  ["castle", "n", 5000],
+  ["murmur", "v", 3000]
 ]
