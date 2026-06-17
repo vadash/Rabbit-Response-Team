@@ -12,6 +12,11 @@ import {
 import { extractTokens } from "../util/tokenize.js";
 import { normalize } from "../util/normalize.js";
 
+// Sweet-spot rank range for contextual anchor selection. Anchors in this
+// range are preferred over the most-frequent headwords for vividness.
+const SWEET_SPOT_MIN = 1000;
+const SWEET_SPOT_MAX = 15000;
+
 // Default to the real data modules. Tests pass stubs via opts.
 let defaultWordsModule = null;
 let defaultSynonymsModule = null;
@@ -124,36 +129,39 @@ function runContextual(words, synonyms, lang, settings, userMessage, history, wa
 
   const tokens = tokenize(userMessage, lang);
 
-  // Rank each candidate by its bank rank (lower rank = more frequent).
-  // Words not in the bank are dropped.
-  const ranked = [];
+  // Gather candidates: tokens that are in the word bank AND have a synonym
+  // entry (checked via normalize() because the build pipeline emits stem
+  // keys — inflected user tokens like "apples" / "госпожой" must collapse
+  // to those stems to match).
+  const candidates = [];
   const seen = new Set();
   for (const t of tokens) {
     if (seen.has(t)) continue;
     seen.add(t);
     const meta = words.getWordMeta(lang, t);
     if (!meta) continue;
-    ranked.push({ word: t, rank: meta.rank });
-  }
-  ranked.sort((a, b) => a.rank - b.rank);
-
-  // Walk by ascending rank (most frequent first); pick the first with an entry.
-  // Lookups against the synonyms data go through normalize() because the
-  // build pipeline emits stem keys (e.g. "appl"); inflected user tokens like
-  // "apples" / "госпожой" must collapse to those stems to match.
-  let chosen = null;
-  for (const c of ranked) {
-    if (synonyms.hasEntry(lang, normalize(c.word, lang))) {
-      chosen = c.word;
-      break;
-    }
+    if (!synonyms.hasEntry(lang, normalize(t, lang))) continue;
+    candidates.push({ word: t, rank: meta.rank });
   }
 
-  if (!chosen) {
+  if (candidates.length === 0) {
     warn(
       "Rabbit Response Team: no keyword with synonym data found; falling back to random mode."
     );
     return runRandom(words, lang, settings, history);
+  }
+
+  // Prefer anchors in the rank sweet spot (1k–15k); fall back to the
+  // most-frequent candidate when no sweet-spot word is available.
+  const sweetSpot = candidates.filter(
+    (c) => c.rank >= SWEET_SPOT_MIN && c.rank <= SWEET_SPOT_MAX
+  );
+  let chosen;
+  if (sweetSpot.length > 0) {
+    chosen = sweetSpot[Math.floor(Math.random() * sweetSpot.length)].word;
+  } else {
+    candidates.sort((a, b) => a.rank - b.rank);
+    chosen = candidates[0].word;
   }
 
   const blacklist = new Set(Array.isArray(rw.blacklist) ? rw.blacklist : []);
