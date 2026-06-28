@@ -132,8 +132,8 @@ export async function bindEvents(container, onChange) {
     $("#rabbit-settings-body").slideToggle(300);
   });
 
-  // Advanced section toggles.
-  root.on("click", ".rabbit-advanced-header", function () {
+  // Section (Basic / Advanced) toggles.
+  root.on("click", ".rabbit-section-header", function () {
     const $h = $(this);
     const expanded = $h.attr("aria-expanded") === "true";
     $h.attr("aria-expanded", String(!expanded));

@@ -59,76 +59,83 @@ export function randomWordsSection(settings) {
 
   return `
     <div id="rabbit-tab-random" class="rabbit-tab-content">
-      <div class="rabbit-setting-row">
-        <label for="rabbit_random_enabled" style="display: flex; align-items: center; justify-content: space-between;">
-          <span>Enable Random Words</span>
-          <label class="rabbit-toggle-switch">
-            <input type="checkbox" id="rabbit_random_enabled" name="rabbit_random_enabled" ${enabled} />
-            <span class="rabbit-toggle-slider"></span>
+      <div class="rabbit-section-header" data-target="#rabbit-random-basic-body" aria-expanded="false">
+        <i class="fa-solid fa-sliders"></i>
+        <span>Basic Settings</span>
+        <i class="fa-solid fa-chevron-down rabbit-section-toggle"></i>
+      </div>
+      <div id="rabbit-random-basic-body" class="rabbit-section-body" style="display: none;">
+        <div class="rabbit-setting-row">
+          <label for="rabbit_random_enabled" style="display: flex; align-items: center; justify-content: space-between;">
+            <span>Enable Random Words</span>
+            <label class="rabbit-toggle-switch">
+              <input type="checkbox" id="rabbit_random_enabled" name="rabbit_random_enabled" ${enabled} />
+              <span class="rabbit-toggle-slider"></span>
+            </label>
           </label>
-        </label>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label for="rabbit_word_count">
+            Number of Random Words: <span id="rabbit_word_count_value">${wordCount}</span>
+          </label>
+          <input type="range" id="rabbit_word_count" name="rabbit_word_count"
+                 min="1" max="10" value="${wordCount}" step="1" />
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label for="rabbit_mode">Word Selection Mode:</label>
+          <select id="rabbit_mode" name="rabbit_mode">
+            <option value="random" ${mode === "random" ? "selected" : ""}>True Random</option>
+            <option value="double-pass" ${mode === "double-pass" ? "selected" : ""}>Double Pass (themed around an anchor)</option>
+            <option value="contextual" ${mode === "contextual" ? "selected" : ""}>Contextual (from your message)</option>
+          </select>
+          <small>
+            Random: completely random words |
+            Double Pass: one anchor plus its thematic associations |
+            Contextual: words related to keywords in your last message
+          </small>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label for="rabbit_word_length">
+            Word Length: <span id="rabbit_word_length_value">${wordLength === 0 ? "Any" : wordLength}</span>
+          </label>
+          <input type="range" id="rabbit_word_length" name="rabbit_word_length"
+                 min="0" max="12" value="${wordLength}" step="1" />
+          <small>0 = Any length, 1-12 = specific letter count</small>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label>Part of Speech:</label>
+          <fieldset class="rabbit-pos-fieldset">
+            <label><input type="checkbox" id="rabbit_pos_noun" name="rabbit_pos_noun" ${pos.noun ? "checked" : ""} /> Nouns</label>
+            <label><input type="checkbox" id="rabbit_pos_verb" name="rabbit_pos_verb" ${pos.verb ? "checked" : ""} /> Verbs</label>
+            <label><input type="checkbox" id="rabbit_pos_adj" name="rabbit_pos_adj" ${pos.adjective ? "checked" : ""} /> Adjectives</label>
+            <label><input type="checkbox" id="rabbit_pos_adv" name="rabbit_pos_adv" ${pos.adverb ? "checked" : ""} /> Adverbs</label>
+          </fieldset>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label for="rabbit_theme_words">Theme Words (optional):</label>
+          <input type="text" id="rabbit_theme_words" name="rabbit_theme_words"
+                 value="${themeWords}"
+                 placeholder="e.g., ocean, adventure, mystery" />
+          <small>Up to 5 comma-separated theme words (used by Double Pass / Contextual modes).</small>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <button id="rabbit_test" type="button" class="rabbit-test-button">🎲 Test Random Words</button>
+        </div>
       </div>
 
-      <div class="rabbit-setting-row">
-        <label for="rabbit_word_count">
-          Number of Random Words: <span id="rabbit_word_count_value">${wordCount}</span>
-        </label>
-        <input type="range" id="rabbit_word_count" name="rabbit_word_count"
-               min="1" max="10" value="${wordCount}" step="1" />
-      </div>
-
-      <div class="rabbit-setting-row">
-        <label for="rabbit_mode">Word Selection Mode:</label>
-        <select id="rabbit_mode" name="rabbit_mode">
-          <option value="random" ${mode === "random" ? "selected" : ""}>True Random</option>
-          <option value="double-pass" ${mode === "double-pass" ? "selected" : ""}>Double Pass (themed around an anchor)</option>
-          <option value="contextual" ${mode === "contextual" ? "selected" : ""}>Contextual (from your message)</option>
-        </select>
-        <small>
-          Random: completely random words |
-          Double Pass: one anchor plus its thematic associations |
-          Contextual: words related to keywords in your last message
-        </small>
-      </div>
-
-      <div class="rabbit-setting-row">
-        <label for="rabbit_word_length">
-          Word Length: <span id="rabbit_word_length_value">${wordLength === 0 ? "Any" : wordLength}</span>
-        </label>
-        <input type="range" id="rabbit_word_length" name="rabbit_word_length"
-               min="0" max="12" value="${wordLength}" step="1" />
-        <small>0 = Any length, 1-12 = specific letter count</small>
-      </div>
-
-      <div class="rabbit-setting-row">
-        <label>Part of Speech:</label>
-        <fieldset class="rabbit-pos-fieldset">
-          <label><input type="checkbox" id="rabbit_pos_noun" name="rabbit_pos_noun" ${pos.noun ? "checked" : ""} /> Nouns</label>
-          <label><input type="checkbox" id="rabbit_pos_verb" name="rabbit_pos_verb" ${pos.verb ? "checked" : ""} /> Verbs</label>
-          <label><input type="checkbox" id="rabbit_pos_adj" name="rabbit_pos_adj" ${pos.adjective ? "checked" : ""} /> Adjectives</label>
-          <label><input type="checkbox" id="rabbit_pos_adv" name="rabbit_pos_adv" ${pos.adverb ? "checked" : ""} /> Adverbs</label>
-        </fieldset>
-      </div>
-
-      <div class="rabbit-setting-row">
-        <label for="rabbit_theme_words">Theme Words (optional):</label>
-        <input type="text" id="rabbit_theme_words" name="rabbit_theme_words"
-               value="${themeWords}"
-               placeholder="e.g., ocean, adventure, mystery" />
-        <small>Up to 5 comma-separated theme words (used by Double Pass / Contextual modes).</small>
-      </div>
-
-      <div class="rabbit-setting-row">
-        <button id="rabbit_test" type="button" class="rabbit-test-button">🎲 Test Random Words</button>
-      </div>
-
-      <div class="rabbit-advanced-header" data-target="#rabbit-random-advanced-body" aria-expanded="false">
+      <div class="rabbit-section-header" data-target="#rabbit-random-advanced-body" aria-expanded="false">
         <i class="fa-solid fa-cog"></i>
         <span>Advanced Settings</span>
-        <i class="fa-solid fa-chevron-down rabbit-advanced-toggle"></i>
+        <i class="fa-solid fa-chevron-down rabbit-section-toggle"></i>
       </div>
 
-      <div id="rabbit-random-advanced-body" class="rabbit-advanced-body" style="display: none;">
+      <div id="rabbit-random-advanced-body" class="rabbit-section-body" style="display: none;">
         <div class="rabbit-setting-row">
           <label for="rabbit_custom_prompt">Custom Prompt Template:</label>
           <textarea id="rabbit_custom_prompt" name="rabbit_custom_prompt" rows="4">${customPrompt}</textarea>
@@ -188,57 +195,64 @@ export function synonymsSection(settings) {
 
   return `
     <div id="rabbit-tab-synonyms" class="rabbit-tab-content" style="display: none;">
-      <div class="rabbit-setting-row">
-        <label for="rabbit_synonym_enabled" style="display: flex; align-items: center; justify-content: space-between;">
-          <span>Enable Synonyms</span>
-          <label class="rabbit-toggle-switch">
-            <input type="checkbox" id="rabbit_synonym_enabled" name="rabbit_synonym_enabled" ${enabled} />
-            <span class="rabbit-toggle-slider"></span>
+      <div class="rabbit-section-header" data-target="#rabbit-synonym-basic-body" aria-expanded="false">
+        <i class="fa-solid fa-sliders"></i>
+        <span>Basic Settings</span>
+        <i class="fa-solid fa-chevron-down rabbit-section-toggle"></i>
+      </div>
+      <div id="rabbit-synonym-basic-body" class="rabbit-section-body" style="display: none;">
+        <div class="rabbit-setting-row">
+          <label for="rabbit_synonym_enabled" style="display: flex; align-items: center; justify-content: space-between;">
+            <span>Enable Synonyms</span>
+            <label class="rabbit-toggle-switch">
+              <input type="checkbox" id="rabbit_synonym_enabled" name="rabbit_synonym_enabled" ${enabled} />
+              <span class="rabbit-toggle-slider"></span>
+            </label>
           </label>
-        </label>
-        <small>Detect overused words in recent chat history and suggest synonyms for variety.</small>
+          <small>Detect overused words in recent chat history and suggest synonyms for variety.</small>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label for="rabbit_scan_depth">Scan Depth (messages):</label>
+          <input type="number" id="rabbit_scan_depth" name="rabbit_scan_depth"
+                 min="1" max="20" value="${scanDepth}" />
+          <small>How many recent messages to analyze for word frequency.</small>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label for="rabbit_min_occurrences">Minimum Occurrences:</label>
+          <input type="number" id="rabbit_min_occurrences" name="rabbit_min_occurrences"
+                 min="2" max="10" value="${minOccurrences}" />
+          <small>Word must appear this many times to trigger a synonym suggestion.</small>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label for="rabbit_top_n">Top N (overused words to surface):</label>
+          <input type="number" id="rabbit_top_n" name="rabbit_top_n"
+                 min="1" max="8" step="1" value="${topN}" />
+          <small>Cap on how many overused words the prompt lists, ranked by frequency.</small>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <label>Output Mode:</label>
+          <fieldset class="rabbit-pos-fieldset">
+            <label><input type="radio" name="rabbit_synonym_output_mode" value="avoid-only" ${outputMode === "avoid-only" ? "checked" : ""} /> Avoid Only (just list words to avoid)</label>
+            <label><input type="radio" name="rabbit_synonym_output_mode" value="with-suggestions" ${outputMode === "with-suggestions" ? "checked" : ""} /> With Suggestions (include synonyms)</label>
+          </fieldset>
+        </div>
+
+        <div class="rabbit-setting-row">
+          <button id="rabbit_test_synonyms" type="button" class="rabbit-test-button">🔎 Test Synonyms</button>
+        </div>
       </div>
 
-      <div class="rabbit-setting-row">
-        <label for="rabbit_scan_depth">Scan Depth (messages):</label>
-        <input type="number" id="rabbit_scan_depth" name="rabbit_scan_depth"
-               min="1" max="20" value="${scanDepth}" />
-        <small>How many recent messages to analyze for word frequency.</small>
-      </div>
-
-      <div class="rabbit-setting-row">
-        <label for="rabbit_min_occurrences">Minimum Occurrences:</label>
-        <input type="number" id="rabbit_min_occurrences" name="rabbit_min_occurrences"
-               min="2" max="10" value="${minOccurrences}" />
-        <small>Word must appear this many times to trigger a synonym suggestion.</small>
-      </div>
-
-      <div class="rabbit-setting-row">
-        <label for="rabbit_top_n">Top N (overused words to surface):</label>
-        <input type="number" id="rabbit_top_n" name="rabbit_top_n"
-               min="1" max="8" step="1" value="${topN}" />
-        <small>Cap on how many overused words the prompt lists, ranked by frequency.</small>
-      </div>
-
-      <div class="rabbit-setting-row">
-        <label>Output Mode:</label>
-        <fieldset class="rabbit-pos-fieldset">
-          <label><input type="radio" name="rabbit_synonym_output_mode" value="avoid-only" ${outputMode === "avoid-only" ? "checked" : ""} /> Avoid Only (just list words to avoid)</label>
-          <label><input type="radio" name="rabbit_synonym_output_mode" value="with-suggestions" ${outputMode === "with-suggestions" ? "checked" : ""} /> With Suggestions (include synonyms)</label>
-        </fieldset>
-      </div>
-
-      <div class="rabbit-setting-row">
-        <button id="rabbit_test_synonyms" type="button" class="rabbit-test-button">🔎 Test Synonyms</button>
-      </div>
-
-      <div class="rabbit-advanced-header" data-target="#rabbit-synonym-advanced-body" aria-expanded="false">
+      <div class="rabbit-section-header" data-target="#rabbit-synonym-advanced-body" aria-expanded="false">
         <i class="fa-solid fa-cog"></i>
         <span>Advanced Settings</span>
-        <i class="fa-solid fa-chevron-down rabbit-advanced-toggle"></i>
+        <i class="fa-solid fa-chevron-down rabbit-section-toggle"></i>
       </div>
 
-      <div id="rabbit-synonym-advanced-body" class="rabbit-advanced-body" style="display: none;">
+      <div id="rabbit-synonym-advanced-body" class="rabbit-section-body" style="display: none;">
         <div class="rabbit-setting-row">
           <label for="rabbit_synonym_prompt">Custom Prompt Template:</label>
           <textarea id="rabbit_synonym_prompt" name="rabbit_synonym_prompt" rows="4">${customPrompt}</textarea>
@@ -282,14 +296,14 @@ export function synonymsSection(settings) {
 export function panelShell({ randomWords, synonyms, language }) {
   return `
     <div class="rabbit-numeral-container">
-      <div class="rabbit-header" data-target="#rabbit-settings-body" aria-expanded="true">
+      <div class="rabbit-header" data-target="#rabbit-settings-body" aria-expanded="false">
         <div class="rabbit-header-icon">🐰</div>
         <h3 class="rabbit-header-title">Rabbit Response Team</h3>
         <div class="rabbit-header-toggle">
           <i class="fa-solid fa-chevron-down"></i>
         </div>
       </div>
-      <div id="rabbit-settings-body" class="rabbit-settings-body">
+      <div id="rabbit-settings-body" class="rabbit-settings-body" style="display: none;">
         <p class="rabbit-description">
           Two offline features: inject random words, or suggest synonyms for overused words.
         </p>
